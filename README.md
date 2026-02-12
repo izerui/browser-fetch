@@ -1,6 +1,15 @@
 # 独立浏览器抓取服务
 
+[![Docker Hub](https://img.shields.io/badge/docker-izerui%2Fbrowser--fetch-blue?logo=docker)](https://hub.docker.com/r/izerui/browser-fetch)
+[![Docker Pulls](https://img.shields.io/docker/pulls/izerui/browser-fetch?logo=docker)](https://hub.docker.com/r/izerui/browser-fetch)
+
 一个独立的、支持高并发的网页抓取服务，使用 Playwright 实现。
+
+**Docker 镜像：** `izerui/browser-fetch`
+
+```bash
+docker pull izerui/browser-fetch:latest
+```
 
 ## 功能特性
 
