@@ -92,16 +92,24 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
     # 8. 构建并推送镜像：构建 Docker 镜像并推送到 Docker Hub
-    - name: Build and Push Docker Image
+    - name: Build and Push Docker Image (amd64)
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
         tags: |
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.project.outputs.version }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.project.outputs.version }}-amd64
         platforms: linux/amd64
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
           VERSION=${{ steps.project.outputs.version }}
+
+    # 9. 合并多架构标签
+    - name: Create Multi-Archifest
+      run: |
+        docker buildx imagetools create \
+          --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.project.outputs.version }} \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.project.outputs.version }}-amd64 \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.project.outputs.version }}-arm64 || true
