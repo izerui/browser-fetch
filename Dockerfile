@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y \
 # 安装 uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# 复制依赖文件
-COPY pyproject.toml uv.lock ./
+# 复制项目文件（pyproject.toml 需要 README.md）
+COPY pyproject.toml uv.lock README.md ./
 
 # 使用 uv 安装依赖
 RUN uv sync --frozen --no-dev
@@ -22,7 +22,7 @@ RUN uv run playwright install chromium
 RUN uv run playwright install-deps chromium
 
 # 复制应用代码
-COPY . .
+COPY app.py main.py ./
 
 # 暴露端口
 EXPOSE 2025
