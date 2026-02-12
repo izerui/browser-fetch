@@ -154,6 +154,47 @@ Content-Type: application/json
 | `wait_for_selector` | string | "" | 等待选择器出现 |
 | `screenshot` | bool | true | 是否截图 |
 
+**`wait_time` 说明：**
+
+页面加载后的固定等待时间，用于等待 JavaScript 执行或动态内容加载。
+
+| 场景 | 推荐值 | 说明 |
+|------|--------|------|
+| 静态页面 | 0-100 | 页面直接渲染，无需等待 |
+| 轻量动态 | 200-500 | 有少量 JS 动态内容 |
+| 中等动态 | 500-1000 | 有 AJAX 加载数据 |
+| 重度动态 | 1000-2000 | 复杂单页应用 (SPA) |
+| 极端场景 | 2000+ | 需要长时间渲染 |
+
+**注意：** `wait_time` 与 `wait_for_selector` 可以同时使用，会先执行 `wait_time` 再等待选择器。
+
+**`wait_for_selector` 选择器示例：**
+
+| 场景 | 选择器 | 说明 |
+|------|--------|------|
+| CSS 类 | `.content` | 等待 class="content" 的元素 |
+| ID | `#main` | 等待 id="main" 的元素 |
+| 标签 | `article` | 等待 `<article>` 元素 |
+| 属性 | `[data-loaded]` | 等待带有 data-loaded 属性的元素 |
+| 组合 | `.post-body p` | 等待 .post-body 内的 `<p>` 元素 |
+| 动态内容 | `.loaded` | 等待动态加载的内容标记 |
+
+**使用示例：**
+
+```json
+// 等待主要内容加载
+{ "wait_for_selector": ".main-content" }
+
+// 等待文章加载
+{ "wait_for_selector": "article" }
+
+// 等待数据加载完成
+{ "wait_for_selector": "[data-ready='true']" }
+
+// 等待评论加载
+{ "wait_for_selector": ".comments-section" }
+```
+
 **响应字段：**
 
 | 字段 | 说明 |
