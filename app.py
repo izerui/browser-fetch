@@ -10,7 +10,6 @@ import os
 import random
 import re
 import time
-import uuid
 import psutil
 from contextlib import asynccontextmanager
 from typing import Any
@@ -72,7 +71,7 @@ class Config:
 class FetchRequest(BaseModel):
     """抓取请求"""
     url: str
-    wait_time: int = 1000  # 等待时间（毫秒）
+    wait_time: int = 200  # 等待时间（毫秒）
     wait_for_selector: str = ""  # 等待选择器
     screenshot: bool = True  # 是否截图
 
@@ -80,14 +79,14 @@ class FetchRequest(BaseModel):
 class FetchResponse(BaseModel):
     """抓取响应"""
     success: bool
-    url: str
+    fetched_url: str
     title: str = ""
     content: str = ""
     screenshot: str = ""  # base64 编码
     content_length: int = 0
     fetched_at: str = ""
     error: str = ""
-    fetch_time: float = 0  # 抓取耗时（秒）
+    duration_seconds: float = 0  # 抓取耗时（秒）
 
 
 # ==================== 内存监控工具 ====================
@@ -144,6 +143,9 @@ class BrowserPool:
         self._initialized = False
         self._request_count = 0  # 请求计数器
         self._start_time = time.time()  # 启动时间
+        self._stealth = Stealth()  # 复用 Stealth 实例
+        self._fetch_counts = [0] * pool_size  # 每个浏览器的抓取计数
+        self._restart_threshold = 20  # 每抓取 20 次重启浏览器
 
     async def initialize(self):
         """初始化浏览器池"""
@@ -201,14 +203,36 @@ class BrowserPool:
         self._request_count += 1
         start_time = time.time()
 
+        # 内存监控任务
+        monitor_task = None
+        stop_monitor = asyncio.Event()
+
+        async def monitor_memory():
+            """异步监控内存使用情况"""
+            while not stop_monitor.is_set():
+                mem_info = get_memory_info()
+                logger.info(
+                    f"📊 [抓取中] RSS: {mem_info['process_rss_mb']:.1f}MB | "
+                    f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
+                    f"总计: {mem_info['total_rss_mb']:.1f}MB"
+                )
+                try:
+                    await asyncio.wait_for(stop_monitor.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    continue
+
         async with self.semaphore:
             # 获取一个可用的浏览器实例（轮询）
-            browser = self.browsers[id(asyncio.current_task()) % len(self.browsers)]
+            browser_index = id(asyncio.current_task()) % len(self.browsers)
+            browser = self.browsers[browser_index]
 
             context = None
             page = None
 
             try:
+                # 启动内存监控
+                monitor_task = asyncio.create_task(monitor_memory())
+
                 # 创建浏览器上下文
                 context = await browser.new_context(
                     viewport={"width": 1920, "height": 1080},
@@ -217,14 +241,14 @@ class BrowserPool:
 
                 page = await context.new_page()
 
-                # 应用反爬虫
-                await self._apply_stealth(page)
+                # 暂时禁用反爬虫（可能导致内存泄漏）
+                # await self._apply_stealth(page)
 
                 # 设置请求头
                 await page.set_extra_http_headers(self._get_headers())
 
                 # 导航到页面
-                await page.goto(request.url, wait_until="domcontentloaded", timeout=30000)
+                await page.goto(request.url, wait_until="commit", timeout=30000)
 
                 # 等待指定时间
                 if request.wait_time > 0:
@@ -238,8 +262,8 @@ class BrowserPool:
                 title = await page.title()
                 html_content = await page.content()
 
-                # 转换为 Markdown
-                markdown_content = markdownify(html_content)
+                # 异步转换为 Markdown（避免阻塞事件循环）
+                markdown_content = await asyncio.to_thread(markdownify, html_content)
                 cleaned_content = self._clean_markdown(markdown_content)
 
                 # 截图
@@ -250,45 +274,79 @@ class BrowserPool:
                         import base64
                         screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
 
-                fetch_time = time.time() - start_time
+                duration_seconds = time.time() - start_time
 
                 return FetchResponse(
                     success=True,
-                    url=request.url,
+                    fetched_url=request.url,
                     title=title or "无标题",
                     content=cleaned_content,
                     screenshot=screenshot_b64,
                     content_length=len(cleaned_content),
                     fetched_at=time.strftime("%Y-%m-%d %H:%M:%S"),
-                    fetch_time=fetch_time
+                    duration_seconds=duration_seconds
                 )
 
             except Exception as e:
                 logger.error(f"抓取失败 {request.url}: {e}")
-                fetch_time = time.time() - start_time
+                duration_seconds = time.time() - start_time
                 return FetchResponse(
                     success=False,
-                    url=request.url,
+                    fetched_url=request.url,
                     error=str(e),
-                    fetch_time=fetch_time
+                    duration_seconds=duration_seconds
                 )
 
             finally:
+                # 停止内存监控
+                stop_monitor.set()
+                if monitor_task:
+                    try:
+                        await asyncio.wait_for(monitor_task, timeout=0.5)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        pass
+
+                # 彻底关闭页面和上下文
                 if page:
                     try:
                         await page.close()
+                        # 移除引用，帮助 GC
+                        page = None
                     except:
-                        pass
+                        page = None
+
                 if context:
                     try:
+                        # 等待所有资源释放
                         await context.close()
+                        # 移除引用，帮助 GC
+                        context = None
                     except:
-                        pass
+                        context = None
+
+                # 强制垃圾回收
+                import gc
+                gc.collect()
+
+                # 检查是否需要重启浏览器
+                self._fetch_counts[browser_index] += 1
+                if self._fetch_counts[browser_index] >= self._restart_threshold:
+                    logger.info(f"浏览器 {browser_index} 已抓取 {self._fetch_counts[browser_index]} 次，执行重启...")
+                    self._fetch_counts[browser_index] = 0
+                    try:
+                        await browser.close()
+                        new_browser = await self.playwright.chromium.launch(
+                            headless=Config.HEADLESS,
+                            args=Config.BROWSER_ARGS
+                        )
+                        self.browsers[browser_index] = new_browser
+                        logger.info(f"浏览器 {browser_index} 重启完成")
+                    except Exception as e:
+                        logger.error(f"重启浏览器 {browser_index} 失败: {e}")
 
     async def _apply_stealth(self, page):
         """应用反爬虫脚本"""
-        stealth = Stealth()
-        await stealth.apply_stealth_async(page)
+        await self._stealth.apply_stealth_async(page)
 
     def _get_headers(self) -> dict[str, str]:
         """获取请求头"""
@@ -458,71 +516,35 @@ async def fetch_page(request: FetchRequest):
     return result
 
 
-@app.post("/fetch_with_files")
-async def fetch_with_files(
-    request: FetchRequest,
-    root_dir: str = "/tmp/browser_fetch"
+@app.post("/fetch_url")
+async def fetch_url(
+    request: FetchRequest
 ):
     """
-    抓取网页并保存到文件
+    抓取网页并返回内容
 
     Args:
         request: 抓取请求
-        root_dir: 根目录
 
     Returns:
-        包含文件路径的抓取结果
+        包含 Markdown 内容和截图的抓取结果
     """
-    import base64
-
     pool = get_browser_pool()
     result = await pool.fetch_page(request)
 
     if not result.success:
         return result
 
-    # 保存文件（在后台任务中）
-    def save_files():
-        import random
-
-        os.makedirs(root_dir, exist_ok=True)
-
-        # 保存 Markdown
-        safe_title = re.sub(r'[<>:"/\\|?*]', '_', result.title)
-        safe_title = re.sub(r'\s+', '_', safe_title)
-        random_suffix = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=5))
-
-        markdown_filename = f"{safe_title}_{random_suffix}.md"
-        markdown_path = os.path.join(root_dir, markdown_filename)
-
-        with open(markdown_path, 'w', encoding='utf-8') as f:
-            f.write(result.content)
-
-        # 保存截图
-        screenshot_filename = ""
-        if result.screenshot:
-            screenshot_uuid = str(uuid.uuid4())
-            screenshot_filename = f"{screenshot_uuid}.png"
-            screenshot_path = os.path.join(root_dir, screenshot_filename)
-
-            screenshot_bytes = base64.b64decode(result.screenshot)
-            with open(screenshot_path, 'wb') as f:
-                f.write(screenshot_bytes)
-
-        return markdown_filename, screenshot_filename
-
-    # 使用 asyncio.to_thread 避免阻塞
-    markdown_filename, screenshot_filename = await asyncio.to_thread(save_files)
-
+    # 直接返回内存中的数据，不生成临时文件
     return {
         "success": True,
-        "url": result.url,
+        "fetched_url": result.fetched_url,
         "title": result.title,
-        "file_path": markdown_path,
-        "screenshot_path": os.path.join(root_dir, screenshot_filename) if screenshot_filename else "",
+        "markdown_content": result.content,
+        "screenshot_base64": result.screenshot,
         "content_length": result.content_length,
         "fetched_at": result.fetched_at,
-        "fetch_time": result.fetch_time
+        "duration_seconds": result.duration_seconds
     }
 
 

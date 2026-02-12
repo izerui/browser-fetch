@@ -12,8 +12,8 @@ import asyncio
 import logging
 import os
 
-import uvicorn
-from fastapi import FastAPI
+from uvicorn.config import Config
+from uvicorn.server import Server
 
 from app import app
 
@@ -27,8 +27,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    """主函数"""
+async def serve():
+    """启动服务器 - 兼容 PyCharm 调试器"""
     port = int(os.getenv('BROWSER_SERVICE_PORT', '2025'))
     host = os.getenv('BROWSER_SERVICE_HOST', '0.0.0.0')
 
@@ -42,12 +42,20 @@ def main():
     logger.info("=" * 60)
     logger.info("")
 
-    uvicorn.run(
-        app,
+    config = Config(
+        app=app,
         host=host,
         port=port,
-        log_level="info"
+        log_level="info",
+        loop="asyncio"
     )
+    server = Server(config)
+    await server.serve()
+
+
+def main():
+    """主函数"""
+    asyncio.run(serve())
 
 
 if __name__ == "__main__":
