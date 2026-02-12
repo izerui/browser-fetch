@@ -23,7 +23,7 @@ docker pull izerui/browser-fetch:latest
 
 ## 使用场景
 
-### AI 智能体网页抓取
+### 🤖 AI 智能体网页抓取
 
 本服务专为 **AI Agent/智能体** 设计，提供网页内容的结构化获取能力。AI Agent 可以通过简单的 API 调用，获取任何网页的：
 
@@ -31,24 +31,79 @@ docker pull izerui/browser-fetch:latest
 - 🖼️ **页面截图** - 用于用户界面展示
 - 📊 **元数据** - 标题、长度、耗时等
 
-**典型应用：**
+---
 
-1. **AI 助手网页预览** - 类似 Manus 的网页截屏功能
-2. **内容采集与分析** - 自动抓取网页供 AI 处理
-3. **知识库构建** - 批量抓取并结构化存储
-4. **竞品监控** - 定时抓取对手网页变化
-5. **RAG 增强** - 实时获取网页内容补充检索
+### 🎯 核心应用场景
 
-**示例展示：**
+#### 1. AI 助手网页预览（类似 Manus）
 
-![AI Agent 使用示例](img.png)
+**Manus** 是一个流行的 AI 助手，用户可以让它"查看网页"并回答问题。本服务提供了相同的能力：
 
-上图展示了 AI Agent 调用服务后的用户界面效果：
-- 左侧显示网页截图
-- 右侧显示提取的 Markdown 内容
-- 用户可以直观地浏览和理解网页
+![Manus 网页查看](img/img_1.png)
 
-**工作流程：**
+*用户：帮我看看这个网页在说什么*
+
+**工作原理：**
+
+```
+用户输入 → AI 接收 URL → 调用 Browser Fetch Service → 返回截图+内容 → AI 分析 → 回答用户
+```
+
+**实际效果：**
+
+![Manus 网页预览效果](img/img_2.png)
+
+AI 助手能够：
+- 👁️ "看见"网页内容（通过截图）
+- 🧠 理解网页结构（通过 Markdown）
+- 💬 回答用户相关问题
+- 📋 提取关键信息
+
+#### 2. 内容采集与分析
+
+自动化抓取网页内容，供 AI 进行：
+- 内容分析
+- 情感分析
+- 关键信息提取
+- 数据挖掘
+
+#### 3. 知识库构建
+
+批量抓取网页并存储到向量数据库：
+- RAG 系统的知识来源
+- 企业知识库更新
+- 行业资讯收集
+
+#### 4. 竞品监控
+
+定时抓取竞品网页，检测变化：
+- 价格监控
+- 产品更新追踪
+- 营销活动监测
+
+#### 5. 智能客服增强
+
+让 AI 能够查看用户提供的网页链接：
+- 用户反馈的具体页面
+- 产品文档内容
+- 错误页面分析
+
+---
+
+### 📸 实际效果展示
+
+**服务返回的数据结构：**
+
+![API 返回结果](img/img.png)
+
+上图展示了本服务返回的完整数据：
+- 🖼️ **左侧**：网页可视化截图（用户可直接查看）
+- 📝 **右侧**：结构化 Markdown 内容（AI 可分析）
+- 📊 **元数据**：标题、长度、抓取时间等
+
+---
+
+### 🔄 工作流程
 
 ```
 ┌─────────────┐     HTTP请求      ┌──────────────┐
@@ -65,16 +120,18 @@ docker pull izerui/browser-fetch:latest
 │  用户看到：                            │
 │  - 网页截图（可视化展示）               │
 │  - Markdown 内容（可复制、可分析）       │
+│  - AI 分析结果                         │
 └───────────────────────────────────────┘
 ```
 
-**代码示例：**
+---
+
+### 💡 代码示例
 
 ```python
 import httpx
-import base64
 
-async def fetch_webpage(url: str):
+async def fetch_webpage_for_ai(url: str):
     """AI Agent 调用示例"""
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -86,11 +143,43 @@ async def fetch_webpage(url: str):
         # 返回给 AI 的结构化数据
         return {
             "title": result["title"],
-            "content": result["markdown_content"],  # 给 LLM 阅读
-            "screenshot": result["screenshot_base64"],  # 给用户看
+            "content": result["markdown_content"],    # 给 LLM 阅读
+            "screenshot": result["screenshot_base64"], # 给用户看
             "fetched_at": result["fetched_at"]
         }
+
+# AI Agent 使用示例
+async def ai_analyze_webpage(url: str, user_question: str):
+    """AI 分析网页并回答用户问题"""
+    data = await fetch_webpage_for_ai(url)
+
+    # 构造 AI 提示
+    prompt = f"""
+    网页标题：{data['title']}
+    网页内容：{data['content'][:2000]}...
+
+    用户问题：{user_question}
+
+    请基于网页内容回答用户的问题。
+    """
+
+    # 调用 LLM（这里省略）
+    # response = await llm.generate(prompt)
+    # return response
 ```
+
+---
+
+### 🌟 为什么选择本服务？
+
+| 特性 | 本服务 | 传统爬虫 | Playwright 直接使用 |
+|------|--------|----------|-------------------|
+| **部署简单** | ✅ 一条命令启动 | ❌ 需要自己实现 | ❌ 需要管理浏览器进程 |
+| **API 友好** | ✅ RESTful JSON | ❌ 需要自行封装 | ❌ 需要自己包装 |
+| **并发支持** | ✅ 内置连接池 | ✅ 支持 | ❌ 需要自己管理 |
+| **内存管理** | ✅ 自动重启防止泄漏 | ✅ 无此问题 | ❌ 容易泄漏 |
+| **Markdown** | ✅ 自动转换 | ❌ 需要额外处理 | ❌ 需要额外处理 |
+| **截图** | ✅ Base64 直接返回 | ❌ 需要额外工具 | ❌ 需要自己处理 |
 
 ## 快速开始
 
