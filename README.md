@@ -192,8 +192,8 @@ docker run -p 2025:2025 \
 
 ### 使用 Docker Hub
 ```bash
-docker pull your-dockerhub-username/browser-fetch:latest
-docker run -p 2025:2025 your-dockerhub-username/browser-fetch:latest
+docker pull izerui/browser-fetch:latest
+docker run -p 2025:2025 izerui/browser-fetch:latest
 ```
 
 ## 架构说明
