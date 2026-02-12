@@ -5,26 +5,29 @@
 ## 功能特性
 
 - 🚀 支持高并发（可配置浏览器实例数量）
-- 🔄 自动重启机制
+- 🔄 自动重启机制（防止内存泄漏）
 - 📊 健康检查端点
-- 🎯 反爬虫检测规避
-- 📸 自动截图
+- 📸 自动截图（Base64 返回）
 - 📝 Markdown 格式输出
+- ⚡ 完全异步架构
+- 🐳 Docker 支持
 
 ## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-pip install -r requirements.txt
-playwright install chromium
+# 使用 uv（推荐）
+uv sync
+
+# 或使用 pip
+pip install -e .
 ```
 
-### 2. 配置环境变量
+### 2. 安装 Playwright 浏览器
 
 ```bash
-cp .env.example .env
-# 编辑 .env 文件配置参数
+playwright install chromium
 ```
 
 ### 3. 启动服务
@@ -115,63 +118,82 @@ GET /stats
 GET /metrics
 ```
 
-响应格式（Prometheus 文本格式）：
-```
-# HELP browser_service_requests_total Total number of requests
-# TYPE browser_service_requests_total counter
-browser_service_requests_total 42
-
-# HELP browser_service_uptime_seconds Service uptime in seconds
-# TYPE browser_service_uptime_seconds gauge
-browser_service_uptime_seconds 3600.50
-
-# HELP browser_service_pool_size Browser pool size
-# TYPE browser_service_pool_size gauge
-browser_service_pool_size 5
-
-# HELP browser_service_memory_bytes Total memory usage in bytes
-# TYPE browser_service_memory_bytes gauge
-browser_service_memory_bytes 2196484096
-
-# HELP browser_service_chromium_processes Number of Chromium processes
-# TYPE browser_service_chromium_processes gauge
-browser_service_chromium_processes 5
-
-# HELP browser_service_max_concurrent Maximum concurrent pages per browser
-# TYPE browser_service_max_concurrent gauge
-browser_service_max_concurrent 10
-```
-
 ### 抓取网页
 ```
-POST /fetch
+POST /fetch_url
 Content-Type: application/json
 
 {
   "url": "https://example.com",
-  "wait_time": 1000,
-  "wait_for_selector": "",
+  "wait_time": 200,
+  "wait_for_selector": ".content",
   "screenshot": true
 }
 ```
 
-### 抓取并保存文件
-```
-POST /fetch_with_files?root_dir=/path/to/save
-Content-Type: application/json
-
+响应示例：
+```json
 {
-  "url": "https://example.com",
-  "wait_time": 1000,
-  "screenshot": true
+  "success": true,
+  "fetched_url": "https://example.com",
+  "title": "Example Domain",
+  "markdown_content": "# Example Domain\n\nThis is a sample page...",
+  "screenshot_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "content_length": 1234,
+  "fetched_at": "2026-02-13 12:30:45",
+  "duration_seconds": 2.35
 }
 ```
+
+**请求参数：**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `url` | string | 必填 | 要抓取的 URL |
+| `wait_time` | int | 200 | 等待时间（毫秒） |
+| `wait_for_selector` | string | "" | 等待选择器出现 |
+| `screenshot` | bool | true | 是否截图 |
+
+**响应字段：**
+
+| 字段 | 说明 |
+|------|------|
+| `success` | 是否成功 |
+| `fetched_url` | 实际抓取的 URL |
+| `title` | 页面标题 |
+| `markdown_content` | Markdown 格式内容 |
+| `screenshot_base64` | 截图 Base64 |
+| `content_length` | 内容长度 |
+| `fetched_at` | 抓取时间 |
+| `duration_seconds` | 耗时（秒） |
+
+## 测试
+
+批量抓取测试：
+```bash
+python test_batch_fetch.py
+```
+
+测试结果会保存到 `dist/` 目录。
 
 ## Docker 部署
 
+### 构建镜像
 ```bash
-docker build -t browser-service .
-docker run -p 2025:2025 -e BROWSER_POOL_SIZE=5 browser-service
+docker build -t browser-fetch .
+```
+
+### 运行容器
+```bash
+docker run -p 2025:2025 \
+  -e BROWSER_POOL_SIZE=5 \
+  browser-fetch
+```
+
+### 使用 Docker Hub
+```bash
+docker pull your-dockerhub-username/browser-fetch:latest
+docker run -p 2025:2025 your-dockerhub-username/browser-fetch:latest
 ```
 
 ## 架构说明
@@ -179,7 +201,7 @@ docker run -p 2025:2025 -e BROWSER_POOL_SIZE=5 browser-service
 ### 异步架构
 - ✅ 完全使用 `async/await`，无阻塞调用
 - ✅ Async Playwright API
-- ✅ 异步 HTTP 通信 (httpx.AsyncClient)
+- ✅ 异步 Markdown 转换
 - ✅ 所有 I/O 操作都是异步的
 
 ### 高并发支持
@@ -199,6 +221,14 @@ docker run -p 2025:2025 -e BROWSER_POOL_SIZE=5 browser-service
 **理论最大并发：** `BROWSER_POOL_SIZE × MAX_CONCURRENT_PAGES`
 
 默认配置：5 实例 × 10 并发 = **50 个同时抓取请求**
+
+### 内存优化机制
+
+为防止内存泄漏，服务采用**定期重启策略**：
+
+- 每个浏览器实例抓取 **20 次**后自动重启
+- 重启过程不中断服务
+- 内存使用保持稳定
 
 ## 内存使用估算
 
@@ -220,45 +250,14 @@ docker run -p 2025:2025 -e BROWSER_POOL_SIZE=5 browser-service
 | 5 | 10 | 2.5 GB | 3.8 GB | ~3.4 GB |
 | 10 | 20 | 5 GB | 8 GB | ~6.5 GB |
 
-**估算公式：**
-```
-基础开销: 20 MB
-浏览器实例: POOL_SIZE × (80 MB + 200 MB)
-并发页面: (POOL_SIZE × CONCURRENT) × 40 MB
-```
-
 ### 推荐配置
 
-| 场景 | 内存预算 | 推荐配置 | 命令 |
-|------|----------|----------|------|
-| 开发测试 | 1-2 GB | POOL_SIZE=2, CONCURRENT=3 | `export BROWSER_POOL_SIZE=2 && export MAX_CONCURRENT_PAGES=3` |
-| 小型生产 | 4 GB | POOL_SIZE=5, CONCURRENT=10 (默认) | - |
-| 中型生产 | 8 GB | POOL_SIZE=10, CONCURRENT=15 | `export BROWSER_POOL_SIZE=10 && export MAX_CONCURRENT_PAGES=15` |
-| 大型生产 | 16 GB+ | POOL_SIZE=15, CONCURRENT=20 | `export BROWSER_POOL_SIZE=15 && export MAX_CONCURRENT_PAGES=20` |
-
-### 内存优化建议
-
-如果内存受限，可以调整浏览器启动参数：
-
-```python
-# 在 app.py 的 Config.BROWSER_ARGS 中添加
-'--single-process',              # 单进程模式（节省内存但降低稳定性）
-'--memory-pressure-off',         # 禁用内存压力检测
-'--max_old_space_size=256',      # 限制 V8 堆内存
-```
-
-**注意：** 单进程模式会显著降低稳定性，仅建议在内存严重受限时使用。
-
-## 性能特性
-
-| 特性 | 状态 | 说明 |
-|------|------|------|
-| 异步架构 | ✅ | 完全使用 `async/await`，无阻塞调用 |
-| 高并发支持 | ✅ | 浏览器实例池 + 信号量控制 |
-| 默认并发数 | 50 | 5 实例 × 10 并发/实例 |
-| 可扩展性 | ✅ | 通过环境变量调整池大小 |
-| 进程隔离 | ✅ | 独立服务，不影响主应用 |
-| 资源清理 | ✅ | 自动关闭 page 和 context |
+| 场景 | 内存预算 | 推荐配置 |
+|------|----------|----------|
+| 开发测试 | 1-2 GB | POOL_SIZE=2, CONCURRENT=3 |
+| 小型生产 | 4 GB | POOL_SIZE=5, CONCURRENT=10 (默认) |
+| 中型生产 | 8 GB | POOL_SIZE=10, CONCURRENT=15 |
+| 大型生产 | 16 GB+ | POOL_SIZE=15, CONCURRENT=20 |
 
 ## 监控和调试
 
@@ -284,21 +283,20 @@ ps aux | grep chromium
 
 # 实时监控
 watch -n 1 'ps aux | grep chromium | grep -v grep'
-
-# 查看内存使用详情
-curl -s http://localhost:2025/stats | jq '.memory'
-```
-
-### 查看进程内存使用
-```bash
-# 查看所有 Chromium 进程
-ps aux | grep chromium
-
-# 实时监控
-watch -n 1 'ps aux | grep chromium | grep -v grep'
 ```
 
 ### Docker 容器监控
 ```bash
-docker stats browser-service
+docker stats browser-fetch
 ```
+
+## 性能特性
+
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| 异步架构 | ✅ | 完全使用 `async/await`，无阻塞调用 |
+| 高并发支持 | ✅ | 浏览器实例池 + 信号量控制 |
+| 默认并发数 | 50 | 5 实例 × 10 并发/实例 |
+| 可扩展性 | ✅ | 通过环境变量调整池大小 |
+| 内存管理 | ✅ | 定期重启防止泄漏 |
+| 实时监控 | ✅ | 抓取过程输出内存状态 |

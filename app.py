@@ -500,22 +500,6 @@ browser_service_max_concurrent {Config.MAX_CONCURRENT_PAGES}
     )
 
 
-@app.post("/fetch")
-async def fetch_page(request: FetchRequest):
-    """
-    抓取网页内容
-
-    Args:
-        request: 抓取请求
-
-    Returns:
-        抓取结果
-    """
-    pool = get_browser_pool()
-    result = await pool.fetch_page(request)
-    return result
-
-
 @app.post("/fetch_url")
 async def fetch_url(
     request: FetchRequest
