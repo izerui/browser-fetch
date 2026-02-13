@@ -254,7 +254,7 @@ python main.py
 | `BROWSER_SERVICE_PORT` | 2025 | 服务端口 |
 | `BROWSER_SERVICE_HOST` | 0.0.0.0 | 服务主机 |
 | `HEADLESS` | true | 无头模式 |
-| `BROWSER_POOL_SIZE` | 5 | 浏览器实例池大小 |
+| `BROWSER_POOL_SIZE` | 3 | 浏览器实例池大小（优化后默认 3） |
 | `MAX_CONCURRENT_PAGES` | 10 | 每个实例的最大并发页面数 |
 | `MAX_SCREENSHOT_SIZE` | 5242880 | 最大截图大小（字节） |
 
@@ -270,17 +270,22 @@ GET /health
 {
   "status": "healthy",
   "browser_started": true,
-  "pool_size": 5,
+  "pool_size": 3,
   "max_concurrent": 10,
   "request_count": 42,
   "uptime_seconds": 3600.5,
   "memory": {
     "process_rss_mb": 45.2,
     "process_vms_mb": 512.3,
-    "children_rss_mb": 2048.5,
-    "total_rss_mb": 2093.7,
-    "chromium_processes": 5,
-    "total_children": 5
+    "children_rss_mb": 1024.5,
+    "total_rss_mb": 1069.7,
+    "chromium_processes": 3,
+    "total_children": 15,
+    "chromium_details": [
+      {"pid": 12345, "name": "chrome-headless-shell", "rss_mb": 150.2},
+      {"pid": 12346, "name": "chrome-headless-shell", "rss_mb": 120.4},
+      {"pid": 12347, "name": "chrome-headless-shell", "rss_mb": 98.6}
+    ]
   }
 }
 ```
@@ -336,7 +341,8 @@ Content-Type: application/json
   "url": "https://example.com",
   "wait_time": 200,
   "wait_for_selector": ".content",
-  "screenshot": true
+  "screenshot": true,
+  "block_media": true
 }
 ```
 
@@ -362,6 +368,7 @@ Content-Type: application/json
 | `wait_time` | int | 200 | 等待时间（毫秒） |
 | `wait_for_selector` | string | "" | 等待选择器出现 |
 | `screenshot` | bool | true | 是否截图 |
+| `block_media` | bool | true | 是否阻止图片/视频加载（降低内存） |
 
 **`wait_time` 说明：**
 
@@ -470,15 +477,20 @@ docker run -p 2025:2025 izerui/browser-fetch:latest
 
 **理论最大并发：** `BROWSER_POOL_SIZE × MAX_CONCURRENT_PAGES`
 
-默认配置：5 实例 × 10 并发 = **50 个同时抓取请求**
+默认配置：3 实例 × 10 并发 = **30 个同时抓取请求**
 
 ### 内存优化机制
 
 为防止内存泄漏，服务采用**定期重启策略**：
 
-- 每个浏览器实例抓取 **20 次**后自动重启
+- 每个浏览器实例抓取 **10 次**后自动重启
 - 重启过程不中断服务
 - 内存使用保持稳定
+
+**额外优化：**
+- **媒体资源拦截** - 默认阻止图片/视频加载，大幅降低内存
+- **单进程模式** - 使用 `--single-process` 减少子进程
+- **V8 内存限制** - `--max-old-space-size=256` 限制堆内存
 
 ## 内存使用估算
 
@@ -495,19 +507,21 @@ docker run -p 2025:2025 izerui/browser-fetch:latest
 
 | BROWSER_POOL_SIZE | MAX_CONCURRENT_PAGES | 最小内存 | 最大内存 | 峰值内存 |
 |-------------------|----------------------|----------|----------|----------|
-| 2 | 3 | 400 MB | 600 MB | ~500 MB |
-| 3 | 5 | 800 MB | 1.2 GB | ~1 GB |
-| 5 | 10 | 2.5 GB | 3.8 GB | ~3.4 GB |
-| 10 | 20 | 5 GB | 8 GB | ~6.5 GB |
+| 2 | 3 | 300 MB | 500 MB | ~400 MB |
+| 3 | 5 | 600 MB | 900 MB | ~750 MB |
+| 5 | 10 | 1.5 GB | 2.5 GB | ~2 GB |
+| 10 | 20 | 3 GB | 5 GB | ~4 GB |
+
+**注意：** 以上估算已启用 `block_media: true`（阻止图片/视频加载），可节省 40-60% 内存。
 
 ### 推荐配置
 
 | 场景 | 内存预算 | 推荐配置 |
 |------|----------|----------|
-| 开发测试 | 1-2 GB | POOL_SIZE=2, CONCURRENT=3 |
-| 小型生产 | 4 GB | POOL_SIZE=5, CONCURRENT=10 (默认) |
-| 中型生产 | 8 GB | POOL_SIZE=10, CONCURRENT=15 |
-| 大型生产 | 16 GB+ | POOL_SIZE=15, CONCURRENT=20 |
+| 开发测试 | 1 GB | POOL_SIZE=2, CONCURRENT=3 |
+| 小型生产 | 2 GB | POOL_SIZE=3, CONCURRENT=10 (默认) |
+| 中型生产 | 4 GB | POOL_SIZE=5, CONCURRENT=10 |
+| 大型生产 | 8 GB+ | POOL_SIZE=10, CONCURRENT=15 |
 
 ## 监控和调试
 
@@ -546,7 +560,12 @@ docker stats browser-fetch
 |------|------|------|
 | 异步架构 | ✅ | 完全使用 `async/await`，无阻塞调用 |
 | 高并发支持 | ✅ | 浏览器实例池 + 信号量控制 |
-| 默认并发数 | 50 | 5 实例 × 10 并发/实例 |
+| 默认并发数 | 30 | 3 实例 × 10 并发/实例 |
 | 可扩展性 | ✅ | 通过环境变量调整池大小 |
 | 内存管理 | ✅ | 定期重启防止泄漏 |
-| 实时监控 | ✅ | 抓取过程输出内存状态 |
+| 实时监控 | ✅ | 抓取过程输出内存状态，包含每个进程详情 |
+| 智能滚动 | ✅ | 自动滚动到底部加载懒加载内容 |
+| 整页截图 | ✅ | 支持截取完整页面，JPEG 压缩减小文件 |
+| 媒体拦截 | ✅ | 可选阻止图片/视频，降低 40-60% 内存 |
+| 反爬虫 | ✅ | 使用 playwright-stealth 绕过检测 |
+| 链接修复 | ✅ | 自动将相对链接转换为绝对链接 |
