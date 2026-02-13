@@ -35,7 +35,7 @@ class Config:
     HOST = os.getenv('BROWSER_SERVICE_HOST', '0.0.0.0')
 
     # 浏览器配置
-    POOL_SIZE = int(os.getenv('BROWSER_POOL_SIZE', '5'))
+    POOL_SIZE = int(os.getenv('BROWSER_POOL_SIZE', '3'))  # 减少：5->3，每个浏览器约 200-400MB
     MAX_CONCURRENT_PAGES = int(os.getenv('MAX_CONCURRENT_PAGES', '10'))
     HEADLESS = os.getenv('HEADLESS', 'true').lower() == 'true'
     MAX_SCREENSHOT_SIZE = int(os.getenv('MAX_SCREENSHOT_SIZE', '5242880'))
@@ -101,6 +101,7 @@ def get_memory_info() -> dict[str, Any]:
     children = process.children(recursive=True)
     children_mem = 0
     chromium_count = 0
+    chromium_details = []  # 每个 Chromium 进程的详细信息
 
     for child in children:
         try:
@@ -109,6 +110,11 @@ def get_memory_info() -> dict[str, Any]:
             # 检查是否是 Chromium 进程
             if 'chrom' in child.name().lower() or 'chrome' in child.name().lower():
                 chromium_count += 1
+                chromium_details.append({
+                    "pid": child.pid,
+                    "name": child.name(),
+                    "rss_mb": round(child_mem / 1024 / 1024, 2),
+                })
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
@@ -119,6 +125,7 @@ def get_memory_info() -> dict[str, Any]:
         "total_rss_mb": round((mem_info.rss + children_mem) / 1024 / 1024, 2),
         "chromium_processes": chromium_count,
         "total_children": len(children),
+        "chromium_details": chromium_details,  # 每个 Chromium 进程的详细信息
     }
 
 
@@ -217,6 +224,10 @@ class BrowserPool:
                     f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
                     f"总计: {mem_info['total_rss_mb']:.1f}MB"
                 )
+                # 显示每个 Chromium 进程的内存
+                if mem_info['chromium_details']:
+                    for detail in mem_info['chromium_details']:
+                        logger.info(f"  └─ PID {detail['pid']} ({detail['name']}): {detail['rss_mb']:.1f}MB")
                 try:
                     await asyncio.wait_for(stop_monitor.wait(), timeout=2.0)
                 except asyncio.TimeoutError:
@@ -242,8 +253,8 @@ class BrowserPool:
 
                 page = await context.new_page()
 
-                # 暂时禁用反爬虫（可能导致内存泄漏）
-                # await self._apply_stealth(page)
+                # 应用反爬虫脚本
+                await self._apply_stealth(page)
 
                 # 设置请求头
                 await page.set_extra_http_headers(self._get_headers())
