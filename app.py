@@ -305,6 +305,7 @@ class BrowserPool:
         self._idle_timeout = 5  # 空闲 5 秒后重启（如果有使用过）
         self._monitor_stop = None  # 监控任务停止事件
         self._active_requests: list = [None] * pool_size  # 每个浏览器当前是否有活跃请求的锁
+        self._browser_locks: list = [asyncio.Lock() for _ in range(pool_size)]  # 每个浏览器的锁
 
     async def initialize(self):
         """初始化浏览器池"""
@@ -456,11 +457,14 @@ class BrowserPool:
             browser_index = self._request_count % len(self.browsers)
             browser = self.browsers[browser_index]
 
-            context = None
+            # 使用锁防止在请求过程中重启
+            async with self._browser_locks[browser_index]:
+
+                context = None
             page = None
 
             try:
-                # 标记浏览器正在使用
+                # 先标记浏览器正在使用（避免被监控任务重启）
                 self._active_requests[browser_index] = True
 
                 # 启动内存监控
@@ -607,6 +611,7 @@ class BrowserPool:
                     highlight_browser=browser_index
                 )
 
+    
     async def _apply_stealth(self, page):
         """应用反爬虫脚本"""
         await self._stealth.apply_stealth_async(page)
