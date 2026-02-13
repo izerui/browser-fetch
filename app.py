@@ -70,8 +70,6 @@ class Config:
         '--disable-ipc-flooding-protection',
         '--disable-renderer-backgrounding',
         '--disable-features=site-per-process',
-        '--single-process',  # 单进程模式，大幅减少内存（但稳定性略降）
-        '--no-zygote',  # 禁用 zygote 进程
         '--disable-leak-detection',
     ]
 
@@ -168,7 +166,9 @@ class BrowserPool:
         self._start_time = time.time()  # 启动时间
         self._stealth = Stealth()  # 复用 Stealth 实例
         self._fetch_counts = [0] * pool_size  # 每个浏览器的抓取计数
-        self._restart_threshold = 10  # 每抓取 10 次重启浏览器（更频繁释放内存）
+        self._restart_threshold = 10  # 每抓取 10 次强制重启
+        self._last_used: list = [0.0] * pool_size  # 每个浏览器的最后使用时间
+        self._idle_timeout = 5  # 空闲 5 秒后重启（如果有使用过）
 
     async def initialize(self):
         """初始化浏览器池"""
@@ -260,7 +260,10 @@ class BrowserPool:
                 # 启动内存监控
                 monitor_task = asyncio.create_task(monitor_memory())
 
-                # 创建浏览器上下文
+                # 更新开始时间（用于计算空闲）
+                self._last_used[browser_index] = time.time()
+
+                # 每次创建新的 context（干净隔离，创建很快）
                 context = await browser.new_context(
                     viewport={"width": 1280, "height": 720},
                     user_agent=Config.get_random_user_agent(),
@@ -358,32 +361,58 @@ class BrowserPool:
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
 
-                # 彻底关闭页面和上下文
+                # 关闭页面和 context，彻底释放内存
                 if page:
                     try:
+                        await page.evaluate("window.document.body.innerHTML = ''")
                         await page.close()
-                        # 移除引用，帮助 GC
                         page = None
                     except:
                         page = None
 
                 if context:
                     try:
-                        # 等待所有资源释放
                         await context.close()
-                        # 移除引用，帮助 GC
                         context = None
                     except:
                         context = None
 
-                # 强制垃圾回收
+                # 强制多次垃圾回收，确保内存释放
                 import gc
-                gc.collect()
+                for _ in range(3):
+                    gc.collect()
+
+                # 请求完成后的内存状态
+                mem_info = get_memory_info()
+                logger.info(
+                    f"📊 [抓取完成] RSS: {mem_info['process_rss_mb']:.1f}MB | "
+                    f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
+                    f"总计: {mem_info['total_rss_mb']:.1f}MB"
+                )
+
+                # 更新最后使用时间
+                self._last_used[browser_index] = time.time()
+                # 显示每个 Chromium 进程的内存
+                if mem_info['chromium_details']:
+                    for detail in mem_info['chromium_details']:
+                        logger.info(f"  └─ PID {detail['pid']} ({detail['name']}): {detail['rss_mb']:.1f}MB")
 
                 # 检查是否需要重启浏览器
                 self._fetch_counts[browser_index] += 1
-                if self._fetch_counts[browser_index] >= self._restart_threshold:
-                    logger.info(f"浏览器 {browser_index} 已抓取 {self._fetch_counts[browser_index]} 次，执行重启...")
+
+                # 计算空闲时间
+                idle_time = time.time() - self._last_used[browser_index]
+                has_been_used = self._fetch_counts[browser_index] > 0
+
+                # 重启条件：达到10次 或 (有使用过且空闲超过5秒)
+                should_restart = (
+                    self._fetch_counts[browser_index] >= self._restart_threshold or
+                    (has_been_used and idle_time > self._idle_timeout)
+                )
+
+                if should_restart:
+                    reason = "达到10次" if self._fetch_counts[browser_index] >= self._restart_threshold else f"空闲{idle_time:.0f}秒"
+                    logger.info(f"浏览器 {browser_index} {reason}，执行重启...")
                     self._fetch_counts[browser_index] = 0
                     try:
                         await browser.close()
@@ -392,7 +421,19 @@ class BrowserPool:
                             args=Config.BROWSER_ARGS
                         )
                         self.browsers[browser_index] = new_browser
-                        logger.info(f"浏览器 {browser_index} 重启完成")
+
+                        # 重启后的内存状态
+                        import gc
+                        gc.collect()
+                        mem_info = get_memory_info()
+                        logger.info(
+                            f"📊 [重启完成] RSS: {mem_info['process_rss_mb']:.1f}MB | "
+                            f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
+                            f"总计: {mem_info['total_rss_mb']:.1f}MB"
+                        )
+                        if mem_info['chromium_details']:
+                            for detail in mem_info['chromium_details']:
+                                logger.info(f"  └─ PID {detail['pid']} ({detail['name']}): {detail['rss_mb']:.1f}MB")
                     except Exception as e:
                         logger.error(f"重启浏览器 {browser_index} 失败: {e}")
 
