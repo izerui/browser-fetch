@@ -296,7 +296,6 @@ class BrowserPool:
         self._start_time = time.time()  # 启动时间
         self._stealth = Stealth()  # 复用 Stealth 实例
         self._fetch_counts = [0] * pool_size  # 每个浏览器的抓取计数
-        self._restart_threshold = 10  # 每抓取 10 次强制重启
         self._last_used: list = [0.0] * pool_size  # 每个浏览器的最后使用时间
         self._idle_timeout = Config.IDLE_TIMEOUT  # 空闲超时时间（秒），超时后重启浏览器
         self._monitor_stop = None  # 监控任务停止事件
