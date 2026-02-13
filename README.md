@@ -2,10 +2,7 @@
 
 一个独立的、支持高并发的网页抓取服务，使用 Playwright 实现。
 
-[![DockerHub](https://img.shields.io/badge/docker-image-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
-[![DockerPulls](https://img.shields.io/badge/docker-pulls-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
-[![DockerSize](https://img.shields.io/badge/docker-image-size-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
-![DockerImage](https://img.shields.io/badge/docker-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+[![Docker Image](https://img.shields.io/badge/docker-zavierui%2Fbrowser-fetch-blue?logo=docker&logoColor=white)](https://hub.docker.com/r/zavierui/browser-fetch)
 
 一个独立的、支持高并发的网页抓取服务，使用 **Playwright** 实现。
 
