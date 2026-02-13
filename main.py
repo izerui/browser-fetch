@@ -12,10 +12,14 @@ import asyncio
 import logging
 import os
 
+from dotenv import load_dotenv
 from uvicorn.config import Config
 from uvicorn.server import Server
 
 from app import app
+
+# 加载 .env 文件
+load_dotenv()
 
 # 配置日志
 logging.basicConfig(
@@ -37,7 +41,7 @@ async def serve():
     logger.info("=" * 60)
     logger.info(f"Host: {host}")
     logger.info(f"Port: {port}")
-    logger.info(f"Pool Size: {os.getenv('BROWSER_POOL_SIZE', 5)}")
+    logger.info(f"Pool Size: {os.getenv('BROWSER_POOL_SIZE', 3)}")
     logger.info(f"Headless: {os.getenv('HEADLESS', 'true')}")
     logger.info("=" * 60)
     logger.info("")

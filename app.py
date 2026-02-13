@@ -14,6 +14,13 @@ import psutil
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urljoin
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+from rich.text import Text
+from rich import box
+from rich.live import Live
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -21,6 +28,9 @@ from pydantic import BaseModel
 from playwright.async_api import async_playwright, Browser, async_playwright
 from playwright_stealth import Stealth
 from markdownify import markdownify
+
+# Rich 控制台（用于美化输出）
+rich_console = Console()
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -151,6 +161,130 @@ def format_bytes(bytes_value: int) -> str:
     return f"{bytes_value:.2f} TB"
 
 
+def format_memory_mb(mb: float) -> str:
+    """格式化内存 MB 为可读格式"""
+    if mb < 1024:
+        return f"{mb:.1f} MB"
+    else:
+        return f"{mb / 1024:.2f} GB"
+
+
+def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highlight_browser: int = None):
+    """使用纯文本格式打印监控信息
+
+    Args:
+        title: 标题（如 "抓取中" 或 "抓取完成"）
+        mem_info: get_memory_info() 返回的字典
+        browser_pool: BrowserPool 实例（用于显示各浏览器状态）
+        highlight_browser: 要高亮显示的浏览器索引
+    """
+    total_mb = mem_info['total_rss_mb']
+    chromium_mb = mem_info['children_rss_mb']
+    chromium_count = mem_info['chromium_processes']
+
+    # 统计信息
+    active_count = sum(1 for x in browser_pool._active_requests if x is not None) if browser_pool else 0
+    total_requests = browser_pool._request_count if browser_pool else 0
+    uptime = int(time.time() - browser_pool._start_time) if browser_pool else 0
+
+    # 内存颜色
+    if total_mb < 500:
+        mem_color = "[green]"
+    elif total_mb < 1000:
+        mem_color = "[yellow]"
+    else:
+        mem_color = "[red]"
+
+    # 格式化运行时间
+    uptime_min = uptime // 60
+    uptime_sec = uptime % 60
+    if uptime_min > 0:
+        uptime_text = f"{uptime_min}分{uptime_sec}秒"
+    else:
+        uptime_text = f"{uptime_sec}秒"
+
+    cpu_percent = psutil.cpu_percent(interval=0.1)
+
+    # 打印分隔线
+    rich_console.print()
+
+    # 概览信息
+    rich_console.print(f"[bold cyan]━━ {title} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+    rich_console.print(f"  CPU: {cpu_percent:.0f}%  |  总内存: {mem_color}{format_memory_mb(total_mb)}[/]  |  Chromium: {chromium_count}进程 ({format_memory_mb(chromium_mb)})")
+    rich_console.print(f"  请求: {total_requests}次  |  运行: {uptime_text}", end="")
+    if browser_pool:
+        rich_console.print(f"  |  浏览器池: [cyan]{active_count}/{browser_pool.pool_size}[/] 活跃")
+    else:
+        rich_console.print()
+
+    # 浏览器实例
+    if browser_pool:
+        rich_console.print(f"[bold cyan]━━ 浏览器实例 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
+
+        for i in range(browser_pool.pool_size):
+            count = browser_pool._fetch_counts[i]
+            has_active = browser_pool._active_requests[i] is not None
+
+            # 计算该浏览器实例的内存，并收集对应的进程 PID
+            browser_mem_mb = 0
+            browser_pids = []
+            current_time = time.time()
+
+            for detail in mem_info['chromium_details']:
+                try:
+                    proc = psutil.Process(detail['pid'])
+                    proc_age = current_time - proc.create_time()
+                    # 通过进程启动时间关联到浏览器实例
+                    last_used = browser_pool._last_used[i]
+                    if proc_age <= 300 and proc_age >= current_time - last_used - 1:
+                        browser_mem_mb += detail['rss_mb']
+                        browser_pids.append(detail['pid'])
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            # 状态图标和样式（统一使用高亮背景色风格）
+            if i == highlight_browser:
+                status_icon = "▶"
+                status_style = "[bold white on cyan]"
+            elif has_active:
+                status_icon = "⚡"
+                status_style = "[bold black on yellow]"
+            elif count >= 8:
+                status_icon = "⚠"
+                status_style = "[bold white on red]"
+            elif count == 0:
+                status_icon = "○"
+                status_style = "[bold black on white]"
+            else:
+                status_icon = "✓"
+                status_style = "[bold white on green]"
+
+            # 内存显示
+            if browser_mem_mb > 0:
+                mem_color = "[red]" if browser_mem_mb > 200 else "[yellow]" if browser_mem_mb > 100 else "[green]"
+                mem_text = f"{mem_color}{format_memory_mb(browser_mem_mb)}[/]"
+            else:
+                mem_text = "[dim]--[/]"
+
+            # 重启倒计时
+            restart_left = browser_pool._restart_threshold - count
+            restart_text = f"{restart_left}次后重启" if restart_left > 3 else f"[yellow]{restart_left}次后重启[/]"
+
+            # PID 显示（如果有）
+            pid_part = ""
+            if browser_pids:
+                pid_str = ",".join(map(str, browser_pids[:3]))
+                if len(browser_pids) > 3:
+                    pid_str += f"+{len(browser_pids)-3}"
+                pid_part = f"  |  PID: [cyan]{pid_str}[/]"
+
+            rich_console.print(
+                f"  {status_style}{status_icon}[/]  [cyan]B{i}[/]  {count}次  |  {restart_text}{pid_part}  |  内存: {mem_text}"
+            )
+
+    rich_console.print()
+
+
 # ==================== 浏览器实例池 ====================
 
 class BrowserPool:
@@ -169,28 +303,69 @@ class BrowserPool:
         self._restart_threshold = 10  # 每抓取 10 次强制重启
         self._last_used: list = [0.0] * pool_size  # 每个浏览器的最后使用时间
         self._idle_timeout = 5  # 空闲 5 秒后重启（如果有使用过）
+        self._monitor_stop = None  # 监控任务停止事件
+        self._active_requests: list = [None] * pool_size  # 每个浏览器当前是否有活跃请求的锁
 
     async def initialize(self):
         """初始化浏览器池"""
         if self._initialized:
             return
 
-        logger.info(f"初始化浏览器实例池，大小: {self.pool_size}")
+        # 使用 Rich 输出初始化信息
+        rich_console.print()
+        rich_console.print(Panel(
+            f"[cyan]正在初始化浏览器实例池，大小: {self.pool_size}[/cyan]",
+            border_style="cyan",
+            padding=(0, 2)
+        ))
 
         try:
             self.playwright = await async_playwright().start()
 
-            # 启动多个浏览器实例
-            for i in range(self.pool_size):
-                browser = await self.playwright.chromium.launch(
-                    headless=Config.HEADLESS,
-                    args=Config.BROWSER_ARGS
-                )
-                self.browsers.append(browser)
-                logger.info(f"浏览器实例 {i}: 已启动")
+            # 启动多个浏览器实例（使用 Rich 进度条）
+            rich_console.print()
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(bar_width=40),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                console=rich_console,
+                transient=True
+            ) as progress:
+                task = progress.add_task("[cyan]启动浏览器实例...[/]", total=self.pool_size)
+
+                for i in range(self.pool_size):
+                    browser = await self.playwright.chromium.launch(
+                        headless=Config.HEADLESS,
+                        args=Config.BROWSER_ARGS
+                    )
+                    self.browsers.append(browser)
+                    progress.advance(task)
 
             self._initialized = True
-            logger.info(f"浏览器实例池初始化完成，实例数: {len(self.browsers)}")
+
+            # 使用 Rich 美化输出（使用顶部已导入的 Table, Panel, box）
+            init_table = Table(show_header=False, box=box.ROUNDED, padding=(0, 1))
+
+            init_table = Table(show_header=False, box=box.ROUNDED, padding=(0, 1))
+            init_table.add_column("", style="cyan", width=18)
+            init_table.add_column("", justify="right")
+
+            init_table.add_row("浏览器池大小", f"[cyan]{len(self.browsers)} 个[/]")
+            init_table.add_row("最大并发", f"[cyan]{Config.MAX_CONCURRENT_PAGES}[/]")
+            init_table.add_row("理论最大并发", f"[green]{len(self.browsers) * Config.MAX_CONCURRENT_PAGES}[/]")
+
+            rich_console.print()
+            rich_console.print(Panel(
+                init_table,
+                title="[bold green]✓ 浏览器池初始化完成[/bold green]",
+                border_style="green"
+            ))
+            rich_console.print()
+
+            # 启动常驻监控任务
+            self._monitor_stop = asyncio.Event()
+            asyncio.create_task(self._monitor_idle_browsers())
 
         except Exception as e:
             logger.error(f"初始化浏览器池失败: {e}")
@@ -198,14 +373,45 @@ class BrowserPool:
 
     async def shutdown(self):
         """关闭所有浏览器实例"""
-        logger.info("关闭浏览器实例池...")
+        # 使用 Rich 美化输出
+        rich_console.print()
+        rich_console.print(Panel(
+            "[yellow]正在关闭浏览器实例池...[/yellow]",
+            border_style="yellow",
+            padding=(0, 2)
+        ))
 
-        for i, browser in enumerate(self.browsers):
-            try:
-                await browser.close()
-                logger.info(f"浏览器实例 {i}: 已关闭")
-            except Exception as e:
-                logger.warning(f"关闭浏览器实例 {i} 时出错: {e}")
+        # 先停止常驻监控任务
+        if self._monitor_stop:
+            self._monitor_stop.set()
+            # Rich 输出
+            rich_console.print(Panel(
+                "[dim]⟳ 常驻监控任务已停止[/dim]",
+                border_style="dim",
+                padding=(0, 2)
+            ))
+
+        # 等待监控任务完全停止
+        await asyncio.sleep(0.5)
+
+        # 关闭所有浏览器实例（使用 Rich 进度条）
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=rich_console,
+            transient=True
+        ) as progress:
+            task = progress.add_task("[cyan]关闭浏览器实例...[/]", total=len(self.browsers))
+
+            for i, browser in enumerate(self.browsers):
+                try:
+                    await browser.close()
+                    progress.advance(task)
+                except Exception as e:
+                    rich_console.print(Panel(
+                        f"[red]关闭浏览器实例 {i} 时出错: {e}[/red]",
+                        border_style="red"
+                    ))
 
         self.browsers.clear()
 
@@ -231,18 +437,15 @@ class BrowserPool:
         stop_monitor = asyncio.Event()
 
         async def monitor_memory():
-            """异步监控内存使用情况"""
+            """异步监控内存使用情况，每2秒输出一次"""
             while not stop_monitor.is_set():
                 mem_info = get_memory_info()
-                logger.info(
-                    f"📊 [抓取中] RSS: {mem_info['process_rss_mb']:.1f}MB | "
-                    f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
-                    f"总计: {mem_info['total_rss_mb']:.1f}MB"
+                print_memory_summary(
+                    "📊 抓取中",
+                    mem_info,
+                    browser_pool=self,
+                    highlight_browser=browser_index
                 )
-                # 显示每个 Chromium 进程的内存
-                if mem_info['chromium_details']:
-                    for detail in mem_info['chromium_details']:
-                        logger.info(f"  └─ PID {detail['pid']} ({detail['name']}): {detail['rss_mb']:.1f}MB")
                 try:
                     await asyncio.wait_for(stop_monitor.wait(), timeout=2.0)
                 except asyncio.TimeoutError:
@@ -257,11 +460,11 @@ class BrowserPool:
             page = None
 
             try:
+                # 标记浏览器正在使用
+                self._active_requests[browser_index] = True
+
                 # 启动内存监控
                 monitor_task = asyncio.create_task(monitor_memory())
-
-                # 更新开始时间（用于计算空闲）
-                self._last_used[browser_index] = time.time()
 
                 # 每次创建新的 context（干净隔离，创建很快）
                 context = await browser.new_context(
@@ -382,60 +585,23 @@ class BrowserPool:
                 for _ in range(3):
                     gc.collect()
 
-                # 请求完成后的内存状态
-                mem_info = get_memory_info()
-                logger.info(
-                    f"📊 [抓取完成] RSS: {mem_info['process_rss_mb']:.1f}MB | "
-                    f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
-                    f"总计: {mem_info['total_rss_mb']:.1f}MB"
-                )
-
-                # 更新最后使用时间
+                # 更新统计信息（只更新一次）
                 self._last_used[browser_index] = time.time()
-                # 显示每个 Chromium 进程的内存
-                if mem_info['chromium_details']:
-                    for detail in mem_info['chromium_details']:
-                        logger.info(f"  └─ PID {detail['pid']} ({detail['name']}): {detail['rss_mb']:.1f}MB")
-
-                # 检查是否需要重启浏览器
                 self._fetch_counts[browser_index] += 1
 
-                # 计算空闲时间
-                idle_time = time.time() - self._last_used[browser_index]
-                has_been_used = self._fetch_counts[browser_index] > 0
+                # 取消活跃请求标记（请求已完成）
+                self._active_requests[browser_index] = None
 
-                # 重启条件：达到10次 或 (有使用过且空闲超过5秒)
-                should_restart = (
-                    self._fetch_counts[browser_index] >= self._restart_threshold or
-                    (has_been_used and idle_time > self._idle_timeout)
+                # 请求完成后的内存状态（使用 Rich 美化输出）
+                mem_info = get_memory_info()
+
+                # 输出抓取完成状态
+                print_memory_summary(
+                    "📊 抓取完成",
+                    mem_info,
+                    browser_pool=self,
+                    highlight_browser=browser_index
                 )
-
-                if should_restart:
-                    reason = "达到10次" if self._fetch_counts[browser_index] >= self._restart_threshold else f"空闲{idle_time:.0f}秒"
-                    logger.info(f"浏览器 {browser_index} {reason}，执行重启...")
-                    self._fetch_counts[browser_index] = 0
-                    try:
-                        await browser.close()
-                        new_browser = await self.playwright.chromium.launch(
-                            headless=Config.HEADLESS,
-                            args=Config.BROWSER_ARGS
-                        )
-                        self.browsers[browser_index] = new_browser
-
-                        # 重启后的内存状态
-                        import gc
-                        gc.collect()
-                        mem_info = get_memory_info()
-                        logger.info(
-                            f"📊 [重启完成] RSS: {mem_info['process_rss_mb']:.1f}MB | "
-                            f"子进程: {mem_info['children_rss_mb']:.1f}MB | "
-                            f"总计: {mem_info['total_rss_mb']:.1f}MB"
-                        )
-                        if mem_info['chromium_details']:
-                            for detail in mem_info['chromium_details']:
-                                logger.info(f"  └─ PID {detail['pid']} ({detail['name']}): {detail['rss_mb']:.1f}MB")
-                    except Exception as e:
-                        logger.error(f"重启浏览器 {browser_index} 失败: {e}")
 
     async def _apply_stealth(self, page):
         """应用反爬虫脚本"""
@@ -448,6 +614,47 @@ class BrowserPool:
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "DNT": "1",
         }
+
+    async def _monitor_idle_browsers(self):
+        """常驻监控任务：定期检查每个浏览器实例的空闲状态"""
+        while not self._monitor_stop.is_set():
+            try:
+                await asyncio.sleep(1)  # 每 1 秒检查一次
+                current_time = time.time()
+
+                for i in range(self.pool_size):
+                    # 计算空闲时间
+                    idle_time = current_time - self._last_used[i]
+                    has_been_used = self._fetch_counts[i] > 0
+
+                    # 检查是否有活跃请求
+                    has_active_request = self._active_requests[i] is not None
+
+                    # 重启条件：达到10次 或 (有使用过且空闲超过5秒且无活跃请求)
+                    should_restart = (
+                        self._fetch_counts[i] >= self._restart_threshold or
+                        (has_been_used and idle_time > self._idle_timeout and not has_active_request)
+                    )
+
+                    if should_restart:
+                        self._fetch_counts[i] = 0
+                        try:
+                            await self.browsers[i].close()
+                            new_browser = await self.playwright.chromium.launch(
+                                headless=Config.HEADLESS,
+                                args=Config.BROWSER_ARGS
+                            )
+                            self.browsers[i] = new_browser
+
+                            # 重启后垃圾回收并输出状态
+                            import gc
+                            gc.collect()
+                            mem_info = get_memory_info()
+                            print_memory_summary("✓ 浏览器重启完成", mem_info, browser_pool=self)
+                        except Exception as e:
+                            logger.error(f"重启浏览器 {i} 失败: {e}")
+            except Exception as e:
+                logger.error(f"监控任务异常: {e}")
 
     async def _scroll_page(self, page) -> None:
         """智能滚动页面以加载懒加载内容
@@ -474,7 +681,6 @@ class BrowserPool:
                 """)
 
                 if is_at_bottom:
-                    logger.info(f"已滚动到底部，第 {i+1} 次")
                     break
 
                 # 执行滚动
