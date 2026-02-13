@@ -236,7 +236,7 @@ class BrowserPool:
 
                 # 创建浏览器上下文
                 context = await browser.new_context(
-                    viewport={"width": 1920, "height": 1080},
+                    viewport={"width": 1280, "height": 720},
                     user_agent=Config.get_random_user_agent(),
                 )
 
@@ -248,16 +248,25 @@ class BrowserPool:
                 # 设置请求头
                 await page.set_extra_http_headers(self._get_headers())
 
-                # 导航到页面
-                await page.goto(request.url, wait_until="commit", timeout=30000)
+                # 导航到页面，等待完全加载（超时则使用已加载内容）
+                try:
+                    await page.goto(request.url, wait_until="load", timeout=30000)
+                except Exception as goto_error:
+                    logger.warning(f"页面加载超时或出错，使用已加载内容: {goto_error}")
 
                 # 等待指定时间
                 if request.wait_time > 0:
                     await page.wait_for_timeout(request.wait_time)
 
-                # 等待选择器
+                # 等待选择器（超时不影响结果）
                 if request.wait_for_selector:
-                    await page.wait_for_selector(request.wait_for_selector, timeout=10000)
+                    try:
+                        await page.wait_for_selector(request.wait_for_selector, timeout=10000)
+                    except Exception:
+                        logger.warning(f"等待选择器超时: {request.wait_for_selector}")
+
+                # 滚动到页面底部
+                await self._scroll_page(page)
 
                 # 获取内容
                 title = await page.title()
@@ -269,13 +278,16 @@ class BrowserPool:
                 # 修复相对链接为绝对链接
                 fixed_content = self._fix_links(cleaned_content, request.url)
 
-                # 截图
+                # 截图（整页，JPEG 格式降低质量以减小文件大小）
                 screenshot_b64 = ""
                 if request.screenshot:
-                    screenshot_bytes = await page.screenshot(full_page=False)
-                    if len(screenshot_bytes) <= Config.MAX_SCREENSHOT_SIZE:
-                        import base64
-                        screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+                    import base64
+                    screenshot_bytes = await page.screenshot(
+                        full_page=True,
+                        type="jpeg",
+                        quality=60  # JPEG 质量 0-100，60 平衡质量和大小
+                    )
+                    screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
 
                 duration_seconds = time.time() - start_time
 
@@ -358,6 +370,43 @@ class BrowserPool:
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "DNT": "1",
         }
+
+    async def _scroll_page(self, page) -> None:
+        """智能滚动页面以加载懒加载内容
+
+        Args:
+            page: Playwright 页面对象
+
+        Returns:
+            None
+        """
+        max_scrolls = 20
+        scroll_wait_ms = 500
+
+        try:
+            for i in range(max_scrolls):
+                # 检查是否已滚动到底部
+                is_at_bottom = await page.evaluate("""
+                    () => {
+                        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                        const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+                        const documentHeight = document.documentElement.scrollHeight;
+                        return scrollTop + windowHeight >= documentHeight - 100;
+                    }
+                """)
+
+                if is_at_bottom:
+                    logger.info(f"已滚动到底部，第 {i+1} 次")
+                    break
+
+                # 执行滚动
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(scroll_wait_ms / 1000)
+
+                logger.debug(f"执行第 {i+1} 次滚动")
+
+        except Exception as e:
+            logger.warning(f"滚动过程出错: {e}")
 
     def _clean_markdown(self, content: str) -> str:
         """清理 Markdown"""
