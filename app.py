@@ -495,6 +495,10 @@ class BrowserPool:
                 try:
                     await page.goto(request.url, wait_until="load", timeout=30000)
                 except Exception as goto_error:
+                    error_msg = str(goto_error)
+                    # 如果是页面/浏览器已关闭的致命错误，直接返回
+                    if "closed" in error_msg.lower() or "crash" in error_msg.lower() or "target" in error_msg.lower():
+                        raise
                     logger.warning(f"页面加载超时或出错，使用已加载内容: {goto_error}")
 
                 # 等待指定时间
