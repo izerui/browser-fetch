@@ -49,6 +49,10 @@ class Config:
     MAX_CONCURRENT_PAGES = int(os.getenv('MAX_CONCURRENT_PAGES', '10'))
     HEADLESS = os.getenv('HEADLESS', 'true').lower() == 'true'
     MAX_SCREENSHOT_SIZE = int(os.getenv('MAX_SCREENSHOT_SIZE', '5242880'))
+    IDLE_TIMEOUT = int(os.getenv('BROWSER_IDLE_TIMEOUT', '5'))  # 空闲超时时间（秒），超时后重启浏览器
+
+    # 日志配置
+    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 
     # User-Agent 池
     USER_AGENTS = [
@@ -87,6 +91,14 @@ class Config:
     def get_random_user_agent(cls) -> str:
         """获取随机 User-Agent"""
         return random.choice(cls.USER_AGENTS)
+
+
+# 配置日志（在 Config 类之后）
+logging.basicConfig(
+    level=Config.LOG_LEVEL,
+    format='%(asctime)s [%(levelname)s] %(name)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 
 # ==================== 请求/响应模型 ====================
@@ -288,7 +300,7 @@ class BrowserPool:
         self.pool_size = pool_size
         self.browsers: list[Browser] = []
         self.playwright = None
-        self.semaphore = asyncio.Semaphore(pool_size)
+        self.semaphore = asyncio.Semaphore(pool_size * Config.MAX_CONCURRENT_PAGES)
         self._initialized = False
         self._request_count = 0  # 请求计数器
         self._start_time = time.time()  # 启动时间
@@ -296,7 +308,7 @@ class BrowserPool:
         self._fetch_counts = [0] * pool_size  # 每个浏览器的抓取计数
         self._restart_threshold = 10  # 每抓取 10 次强制重启
         self._last_used: list = [0.0] * pool_size  # 每个浏览器的最后使用时间
-        self._idle_timeout = 5  # 空闲 5 秒后重启（如果有使用过）
+        self._idle_timeout = Config.IDLE_TIMEOUT  # 空闲超时时间（秒），超时后重启浏览器
         self._monitor_stop = None  # 监控任务停止事件
 
         # 引用计数 + 条件变量（支持多请求并发，重启时等待所有请求完成）
@@ -488,8 +500,22 @@ class BrowserPool:
                     await page.goto(request.url, wait_until="load", timeout=30000)
                 except Exception as goto_error:
                     error_msg = str(goto_error)
-                    # 如果是页面/浏览器已关闭的致命错误，直接返回
-                    if "closed" in error_msg.lower() or "crash" in error_msg.lower() or "target" in error_msg.lower():
+                    error_msg_lower = error_msg.lower()
+
+                    # 致命错误：连接失败、页面/浏览器已关闭
+                    fatal_keywords = [
+                        "err_connection_reset",
+                        "err_connection_closed",
+                        "err_connection_refused",
+                        "err_connection_aborted",
+                        "err_connection_failed",
+                        "err_name_not_resolved",
+                        "err_timed_out",
+                        "closed",
+                        "crash",
+                        "target"
+                    ]
+                    if any(keyword in error_msg_lower for keyword in fatal_keywords):
                         raise
                     logger.warning(f"页面加载超时或出错，使用已加载内容: {goto_error}")
 

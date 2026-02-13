@@ -108,26 +108,27 @@ chromium_details = [
 
 **重启条件（同时满足）：**
 
-1. **强制重启：** 抓取次数达到 10 次
-2. **空闲重启：**
-   - 已使用过（`fetch_counts > 0`）
-   - 空闲超过 5 秒
-   - 无活跃请求
+- **空闲重启：**
+  - 已使用过（`fetch_counts > 0`）
+  - 空闲超过配置的秒数（默认 5 秒，可通过 `BROWSER_IDLE_TIMEOUT` 配置）
+  - 无活跃请求（`_ref_counts[i] == 0`）
+  - 未在重启中（`not _restarting[i]`）
 
-**活跃请求保护：**
+**活跃请求保护（引用计数 + Condition）：**
 ```python
-# app.py 第 173, 292, 421 行
-self._active_requests: list = [None] * pool_size
+# app.py 第 309-313 行
+self._ref_counts = [0] * pool_size      # 每个浏览器的活跃请求计数
+self._restarting = [False] * pool_size   # 是否正在重启
+self._conditions = [asyncio.Condition() for _ in range(pool_size)]  # 条件变量
 
-# 请求开始
-self._active_requests[browser_index] = True
+# 请求获取浏览器时增加引用计数
+self._ref_counts[browser_index] += 1
 
-# 请求完成
-self._active_requests[browser_index] = None
+# 请求完成时减少引用计数
+self._ref_counts[browser_index] -= 1
 
 # 重启前检查
-has_active_request = self._active_requests[i] is not None
-if not has_active_request:  # 只有无活跃请求时才重启
+if self._ref_counts[i] == 0:  # 只有无活跃请求时才重启
     # 执行重启...
 ```
 
@@ -302,7 +303,7 @@ async with self.semaphore:
 **关键点：**
 1. `self._request_count += 1` 必须在 `async with self.semaphore` 内部
 2. 使用 `(self._request_count - 1)` 确保索引从 0 开始
-3. `semaphore` 限制总并发数为 `POOL_SIZE`，防止浏览器实例过载
+3. `semaphore` 限制总并发数为 `POOL_SIZE × MAX_CONCURRENT_PAGES`（例如：3 × 10 = 30）
 
 ---
 
@@ -311,7 +312,7 @@ async with self.semaphore:
 ### 浏览器池配置
 
 ```python
-# 默认值（app.py 第 38-39 行）
+# 默认值（app.py 第 48-49 行）
 POOL_SIZE = 3  # 浏览器实例数量
 MAX_CONCURRENT_PAGES = 10  # 每个实例的最大并发数
 ```
@@ -325,9 +326,10 @@ MAX_CONCURRENT_PAGES = 10  # 每个实例的最大并发数
 | BROWSER_SERVICE_PORT | 2025 | 服务端口 |
 | BROWSER_SERVICE_HOST | 0.0.0.0 | 服务主机 |
 | HEADLESS | true | 无头模式 |
-| BROWSER_POOL_SIZE | 3 | 浏览器池大小 |
-| MAX_CONCURRENT_PAGES | 10 | 最大并发页面数 |
-| MAX_SCREENSHOT_SIZE | 5242880 | 最大截图大小（字节） |
+| BROWSER_POOL_SIZE | 3 | 浏览器池大小（建议：2-5，每个约 200-400MB 内存） |
+| MAX_CONCURRENT_PAGES | 10 | 每个浏览器实例的最大并发页面数（理论最大并发 = POOL_SIZE × MAX_CONCURRENT_PAGES） |
+| MAX_SCREENSHOT_SIZE | 5242880 | 最大截图大小（字节，5242880 = 5MB） |
+| BROWSER_IDLE_TIMEOUT | 5 | 空闲超时时间（秒），浏览器空闲超过此时间后自动重启释放内存（设为 0 禁用） |
 
 ### 内存估算
 
@@ -442,6 +444,38 @@ watch -n 1 'curl -s http://localhost:2025/health | jq ".memory"'
 | 智能滚动 | app.py | 680-713 |
 | 链接修复 | app.py | 716-758 |
 | Rich 进度条 | app.py | 338-365 (启动), 395-415 (关闭) |
+
+---
+
+## 最新配置更新 (2026-02-13 晚)
+
+### 新增环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `BROWSER_IDLE_TIMEOUT` | 5 | 空闲超时时间（秒），浏览器空闲超过此时间后自动重启释放内存（设为 0 禁用） |
+
+### 并发控制优化
+
+**修改前：** `semaphore = Semaphore(pool_size)` → 最多 pool_size 个并发
+**修改后：** `semaphore = Semaphore(pool_size × MAX_CONCURRENT_PAGES)` → 理论最大并发
+
+**示例：**
+- POOL_SIZE=3, MAX_CONCURRENT_PAGES=10
+- 实际最大并发：**30 个同时请求**
+
+### 连接错误处理
+
+新增致命错误列表，以下情况直接返回 `success=False`：
+- `ERR_CONNECTION_RESET` - 连接被重置
+- `ERR_CONNECTION_CLOSED` - 连接被关闭
+- `ERR_CONNECTION_REFUSED` - 连接被拒绝
+- `ERR_CONNECTION_ABORTED` - 连接被中止
+- `ERR_CONNECTION_FAILED` - 连接失败
+- `ERR_NAME_NOT_RESOLVED` - DNS 解析失败
+- `ERR_TIMED_OUT` - 连接超时
+- `closed` - 页面/浏览器已关闭
+- `crash` - 浏览器崩溃
 
 ---
 
