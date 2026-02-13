@@ -59,6 +59,20 @@ class Config:
         '--disable-sync',
         '--no-first-run',
         '--disable-setuid-sandbox',
+        # 内存优化参数
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-client-side-phishing-detection',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-features=TranslateUI,VizDisplayCompositor',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-renderer-backgrounding',
+        '--disable-features=site-per-process',
+        '--single-process',  # 单进程模式，大幅减少内存（但稳定性略降）
+        '--no-zygote',  # 禁用 zygote 进程
+        '--disable-leak-detection',
     ]
 
     @classmethod
@@ -153,7 +167,7 @@ class BrowserPool:
         self._start_time = time.time()  # 启动时间
         self._stealth = Stealth()  # 复用 Stealth 实例
         self._fetch_counts = [0] * pool_size  # 每个浏览器的抓取计数
-        self._restart_threshold = 20  # 每抓取 20 次重启浏览器
+        self._restart_threshold = 10  # 每抓取 10 次重启浏览器（更频繁释放内存）
 
     async def initialize(self):
         """初始化浏览器池"""
