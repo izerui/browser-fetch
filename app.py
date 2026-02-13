@@ -436,8 +436,6 @@ class BrowserPool:
         async with self.semaphore:
             # 获取一个可用的浏览器实例（原子轮询）
             browser_index = self._request_count % len(self.browsers)
-            # 先标记浏览器正在使用（避免被监控任务重启）
-            self._active_requests[browser_index] = True
             browser = self.browsers[browser_index]
 
             # 打印开始抓取（带监控面板）
@@ -449,10 +447,10 @@ class BrowserPool:
                 highlight_browser=browser_index
             )
 
-            # 使用锁防止在请求过程中重启
-            async with self._browser_locks[browser_index]:
+            # 标记浏览器正在使用（避免被监控任务重启）
+            self._active_requests[browser_index] = True
 
-                context = None
+            context = None
             page = None
 
             try:
@@ -623,6 +621,9 @@ class BrowserPool:
                     if should_restart:
                         self._fetch_counts[i] = 0
                         async with self._browser_locks[i]:
+                            # 锁内二次检查：确认没有活跃请求（避免竞态条件）
+                            if self._active_requests[i] is not None:
+                                continue
                             try:
                                 await self.browsers[i].close()
                                 new_browser = await self.playwright.chromium.launch(
