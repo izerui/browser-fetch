@@ -1,53 +1,106 @@
-# 独立浏览器抓取服务
-
-[![Docker Hub](https://img.shields.io/badge/docker-izerui%2Fbrowser--fetch-blue?logo=docker)](https://hub.docker.com/r/izerui/browser-fetch)
-[![Docker Pulls](https://img.shields.io/docker/pulls/izerui/browser-fetch?logo=docker)](https://hub.docker.com/r/izerui/browser-fetch)
+# Browser Fetch Service
 
 一个独立的、支持高并发的网页抓取服务，使用 Playwright 实现。
 
-**Docker 镜像：** `izerui/browser-fetch`
+[![Docker Hub](https://img.shields.io/badge/docker-image-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+[![Docker Pulls](https://img.shields.io/badge/docker-pulls-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+[![Docker Size](https://img.shields.io/badge/docker-image-size-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+![Docker Image](https://img.shields.io/badge/docker-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
 
-```bash
-docker pull izerui/browser-fetch:latest
-```
-
-## 功能特性
-
-- 🚀 支持高并发（可配置浏览器实例数量）
-- 🔄 自动重启机制（防止内存泄漏）
-- 📊 健康检查端点
-- 📸 自动截图（Base64 返回）
-- 📝 Markdown 格式输出
-- ⚡ 完全异步架构
-- 🐳 Docker 支持
-
-## 使用场景
-
-### 🤖 AI 智能体网页抓取
-
-本服务专为 **AI Agent/智能体** 设计，提供网页内容的结构化获取能力。AI Agent 可以通过简单的 API 调用，获取任何网页的：
-
-- 📄 **Markdown 内容** - 用于 LLM 理解和分析
-- 🖼️ **页面截图** - 用于用户界面展示
-- 📊 **元数据** - 标题、长度、耗时等
+一个独立的、支持高并发的网页抓取服务，使用 **Playwright** 实现。
 
 ---
 
-### 🎯 核心应用场景
+## 🚀 功能特性
 
-#### 1. AI 助手网页预览（类似 Manus）
+- ⚡ **高并发** - 支持浏览器实例池 + 多页面并发
+- 🔄 **内存管理** - 自动重启机制防止内存泄漏
+- 📊 **健康检查** - 实时监控服务状态和资源使用
+- 📸 **自动截图** - Base64 编码的整页 JPEG 截图
+- 📝 **Markdown 输出** - 自动将 HTML 转换为 Markdown
+- 🔧 **链接修复** - 自动将相对链接转换为绝对链接
+- 🕵 **反爬虫** - 集成 playwright-stealth
+- ⚙️ **异步架构** - 完全异步，无阻塞调用
+- 🐳 **Docker 支持** - 一键部署
 
-**Manus** 是一个流行的 AI 助手，用户可以让它"查看网页"并回答问题。本服务提供了相同的能力：
+---
 
-![Manus 网页查看](img/img_1.png)
+## 📖 使用场景
 
-*用户：帮我看看这个网页在说什么*
+### 🤖 AI 智能体网页抓取
+
+本服务专为 **AI Agent** 和 **智能体** 设计，提供网页内容的结构化获取能力。AI Agent 可以通过简单的 API 调用，获取任何网页的：
+
+- 📄 **Markdown 内容** - 用于 LLM 阅读和分析
+- 🖼️ **页面截图** - 用于用户界面展示
+- 📊 **元数据** - 标题、长度、抓取时间等
 
 **工作原理：**
+```
+用户输入 → AI 接收 URL → 调用 Browser Fetch Service → 返回截图 + 内容 → AI 分析 → 回答用户
+```
 
+**实际效果：**
+- 👁️ "看见"网页内容（通过截图）
+- 🧠 理解网页结构（通过 Markdown）
+- 💬 回答用户相关问题
+
+---
+
+### 🔍 内容采集与分析
+
+自动化抓取网页内容供 AI 进行：
+
+- 🔍 内容分析
+- 🔑 关键信息提取
+- 📊 数据挖掘
+
+### 🏗 知识库构建
+
+批量抓取网页并存储到向量数据库：
+
+- RAG 系统的知识来源
+- 企业知识库更新
+- 行业资讯收集
+
+---
+
+## 📸 实际效果展示
+
+**服务返回的数据结构：**
+
+![API 返回结果](img/img.png)
+
+上图展示了本服务返回的完整数据：
+
+- 🖼️ **左侧**：网页可视化截图（用户可直接查看）
+- 📝 **右侧**：结构化 Markdown 内容（AI 可分析）
+- 📊 **元数据**：标题、长度、抓取时间等
+
+---
+
+## 📖 使用场景
+
+### 🤖 AI 智能体网页抓取
+
+本服务专为 **AI Agent** 和 **智能体** 设计，提供网页内容的结构化获取能力。AI Agent 可以通过简单的 API 调用，获取任何网页的：
+
+- 📄 **Markdown 内容** - 用于 LLM 阅读和分析
+- 🖼️ **页面截图** - 用于用户界面展示
+- 📊 **元数据** - 标题、长度、抓取时间等
+
+**工作原理：**
 ```
-用户输入 → AI 接收 URL → 调用 Browser Fetch Service → 返回截图+内容 → AI 分析 → 回答用户
+用户输入 → AI 接收 URL → 调用 Browser Fetch Service → 返回截图 + 内容 → AI 分析 → 回答用户
 ```
+
+---
+
+**Manus** - 流行 AI 助手，用户可以让它"查看网页"并回答问题。
+
+![Manus 页面查看示例](img/img_1.png)
+
+*用户：帮我看看这个网页在说什么*
 
 **实际效果：**
 
@@ -59,74 +112,48 @@ AI 助手能够：
 - 💬 回答用户相关问题
 - 📋 提取关键信息
 
-#### 2. 内容采集与分析
-
-自动化抓取网页内容，供 AI 进行：
-- 内容分析
-- 情感分析
-- 关键信息提取
-- 数据挖掘
-
-#### 3. 知识库构建
-
-批量抓取网页并存储到向量数据库：
-- RAG 系统的知识来源
-- 企业知识库更新
-- 行业资讯收集
-
-#### 4. 竞品监控
-
-定时抓取竞品网页，检测变化：
-- 价格监控
-- 产品更新追踪
-- 营销活动监测
-
-#### 5. 智能客服增强
-
-让 AI 能够查看用户提供的网页链接：
-- 用户反馈的具体页面
-- 产品文档内容
-- 错误页面分析
-
 ---
 
-### 📸 实际效果展示
-
-**服务返回的数据结构：**
-
-![API 返回结果](img/img.png)
-
-上图展示了本服务返回的完整数据：
-- 🖼️ **左侧**：网页可视化截图（用户可直接查看）
-- 📝 **右侧**：结构化 Markdown 内容（AI 可分析）
-- 📊 **元数据**：标题、长度、抓取时间等
-
----
-
-### 🔄 工作流程
+## 🔄 工作流程
 
 ```
-┌─────────────┐     HTTP请求      ┌──────────────┐
-│  AI Agent   │ ────────────────> │ Browser Fetch│
-│  (Claude)   │ <──────────────── │   Service    │
-└─────────────┘     JSON响应       └──────────────┘
-       │                                │
-       │ 1. 发送 URL                    │ 2. 启动浏览器
-       │                                │ 3. 加载页面
-       │                                │ 4. 截图 + 转换
-       │                                │ 5. 返回 JSON
-       ▼                                ▼
-┌───────────────────────────────────────┐
-│  用户看到：                            │
-│  - 网页截图（可视化展示）               │
-│  - Markdown 内容（可复制、可分析）       │
-│  - AI 分析结果                         │
-└───────────────────────────────────────┘
+┌───────────── HTTP 请求      ┌──────────────
+│  AI Agent   │
+│      │       │
+│      ↓       │
+│ ┌─────────┐ │
+│ │ Browser │ │
+│ │ Fetch   │ │
+│ │ Service │ │
+│ └────┬────┘ │
+│      │       │
+└──────┼──────→ │
+              │
+              ↓
+        ┌────────────┐
+        │ JSON 响应  │
+        └────────────┘
+              │
+              ↓
+        ┌─────────────────┐
+        │ 1. 发送 URL          │
+        │ 2. 启动浏览器       │
+        │ 3. 加载页面         │
+        │ 4. 截图 + 转换       │
+        │ 5. 返回 JSON         │
+        └─────────────────┘
 ```
+
+**用户看到：**
+- 🖼️ 网页截图（可视化展示）
+- 📝 Markdown 内容（可复制、可分析）
+- 💬 AI 分析结果
 
 ---
 
-### 💡 代码示例
+## 💡 代码示例
+
+### Python 调用示例
 
 ```python
 import httpx
@@ -140,51 +167,49 @@ async def fetch_webpage_for_ai(url: str):
         )
         result = response.json()
 
-        # 返回给 AI 的结构化数据
+        # 返回给 LLM 的结构化数据
         return {
             "title": result["title"],
-            "content": result["markdown_content"],    # 给 LLM 阅读
-            "screenshot": result["screenshot_base64"], # 给用户看
+            "content": result["markdown_content"],  # 给 LLM 阅读
+            "screenshot": result["screenshot_base64"],  # 给用户看
             "fetched_at": result["fetched_at"]
         }
 
-# AI Agent 使用示例
-async def ai_analyze_webpage(url: str, user_question: str):
-    """AI 分析网页并回答用户问题"""
-    data = await fetch_webpage_for_ai(url)
+# 使用示例
+async def main():
+    result = await fetch_webpage_for_ai("https://example.com")
+    print(result)
+```
 
-    # 构造 AI 提示
-    prompt = f"""
-    网页标题：{data['title']}
-    网页内容：{data['content'][:2000]}...
+### cURL 调用示例
 
-    用户问题：{user_question}
-
-    请基于网页内容回答用户的问题。
-    """
-
-    # 调用 LLM（这里省略）
-    # response = await llm.generate(prompt)
-    # return response
+```bash
+curl -X POST http://browser-fetch:2025/fetch_url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "wait_time": 1000,
+    "screenshot": true,
+    "block_media": true
+  }'
 ```
 
 ---
 
-### 🔗 链接自动修复
+## 🔗 链接自动修复
 
 为方便 LLM 处理，服务会**自动修复 Markdown 内容中的相对链接**，确保所有链接都是完整可用的：
 
 #### 修复类型
 
-| 链接类型 | 修复前 | 修复后 | 说明 |
-|---------|--------|------|
-| Markdown 链接 | `[text](/abc)` | `[text](https://sample.com/abc)` | 相对路径补全为绝对路径 |
-| 协议相对路径 | `//cdn.com/lib.js` | `https://cdn.com/lib.js` | 补全协议头 |
-| 协议相对路径 | `/api/def/news` | `https://sample.com/api/def/news` | 根路径补全协议 |
-| HTML 属性链接 | `href="login"` | `href="#"` | 移除空链接或改为锚点 |
-| JavaScript 链接 | `javascript:void(0)` | `href="#"` | 移除 JS 链接（安全） |
-| Markdown 图片 | `![alt](img.jpg)` | `![alt](https://sample.com/img.jpg)` | 图片路径补全 |
-| 空链接处理 | `href=""` | `href="#"` | 修复为锚点或移除 |
+| 链接类型 | 修复前 | 修复后 |
+|----------|--------|--------|
+| Markdown 链接 | `[text](/abc)` | `[text](https://sample.com/abc)` |
+| 协议相对路径 | `//cdn.com/lib.js` | `https://cdn.com/lib.js` |
+| HTML href | `href="login"` | `href="https://sample.com/login"` |
+| JavaScript 链接 | `javascript:void(0)` | `href="#"` |
+| Markdown 图片 | `![alt](img.jpg)` | `![alt](https://sample.com/img.jpg)` |
+| 空链接 | `href=""` | `href="#"` |
 
 #### 示例
 
@@ -194,378 +219,290 @@ async def ai_analyze_webpage(url: str, user_question: str):
 [相对路径](/def/login)
 [协议路径](//cdn.com/lib.js)
 [空链接](href="")
+[JavaScript](javascript:void(0))
 ```
 
 服务会自动修复为：
 
 ```markdown
-[相对路径](https://example.com/news/def/login)
+[相对路径](https://example.com/def/login)
 [协议路径](https://cdn.com/lib.js)
 [空链接](href="#")
+[JavaScript](href="#")
 ```
 
 **注意：** 链接修复在服务端自动完成，**无需额外处理**，LLM 可以直接使用返回的 Markdown 内容。
 
 ---
 
----
-
-### 🌟 为什么选择本服务？
+## ❓ 为什么要选择本服务？
 
 | 特性 | 本服务 | 传统爬虫 | Playwright 直接使用 |
-|------|--------|----------|-------------------|
-| **部署简单** | ✅ 一条命令启动 | ❌ 需要自己实现 | ❌ 需要管理浏览器进程 |
+|------|----------|----------|------------------|
+| **部署简单** | ✅ 一条命令启动 | ❌ 需要自己实现 | ❌ 需要自己管理浏览器 |
 | **API 友好** | ✅ RESTful JSON | ❌ 需要自行封装 | ❌ 需要自己包装 |
-| **并发支持** | ✅ 内置连接池 | ✅ 支持 | ❌ 需要自己管理 |
-| **内存管理** | ✅ 自动重启防止泄漏 | ✅ 无此问题 | ❌ 容易泄漏 |
-| **Markdown** | ✅ 自动转换 | ❌ 需要额外处理 | ❌ 需要额外处理 |
-| **截图** | ✅ Base64 直接返回 | ❌ 需要额外工具 | ❌ 需要自己处理 |
+| **并发支持** | ✅ 内置连接池 | ❌ 需要自己实现 | ❌ 需要自己管理 |
+| **内存管理** | ✅ 自动重启防泄漏 | ❌ 容易泄漏 | ❌ 需要自己管理 |
+| **Markdown 优化** | ✅ 自动转换 | ❌ 需要额外处理 | ❌ 需要额外处理 |
+| **截图支持** | ✅ Base64 直接返回 | ❌ 需要额外工具 | ❌ 需要自己处理 |
+| **反爬虫** | ✅ 集成 stealth | ❌ 需要自己实现 | ❌ 需要自己实现 |
 
-## 快速开始
+---
+
+## 🚀 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-# 使用 uv（推荐）
-uv sync
+# 使用 uvicorn（推荐）
+pip install -r requirements.txt
 
 # 或使用 pip
-pip install -e .
+pip install fastapi uvicorn playwright
+playwright install chromium
 ```
 
-### 2. 安装 Playwright 浏览器
+### 2. 配置环境变量
+
+编辑 `.env` 文件：
 
 ```bash
-playwright install chromium
+# 服务配置
+BROWSER_SERVICE_PORT=2025
+BROWSER_SERVICE_HOST=0.0.0.0
+
+# 浏览器配置
+HEADLESS=true
+BROWSER_POOL_SIZE=3          # 浏览器实例池大小
+MAX_CONCURRENT_PAGES=10      # 每个实例的最大并发页面数
+BROWSER_IDLE_TIMEOUT=5        # 空闲超时时间（秒），超时后重启浏览器
+
+# 日志配置
+LOG_LEVEL=INFO             # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
 ### 3. 启动服务
 
 ```bash
+# 方式一：使用启动脚本（推荐）
+./start.sh
+
+# 方式二：直接运行
 python main.py
 ```
 
 服务将在 `http://localhost:2025` 启动。
 
-## 环境变量
+---
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `BROWSER_SERVICE_PORT` | 2025 | 服务端口 |
-| `BROWSER_SERVICE_HOST` | 0.0.0.0 | 服务主机 |
-| `HEADLESS` | true | 无头模式 |
-| `BROWSER_POOL_SIZE` | 3 | 浏览器实例池大小（优化后默认 3） |
-| `MAX_CONCURRENT_PAGES` | 10 | 每个实例的最大并发页面数 |
-| `MAX_SCREENSHOT_SIZE` | 5242880 | 最大截图大小（字节） |
-
-## API 端点
-
-### 健康检查
-```
-GET /health
-```
-
-响应示例：
-```json
-{
-  "status": "healthy",
-  "browser_started": true,
-  "pool_size": 3,
-  "max_concurrent": 10,
-  "request_count": 42,
-  "uptime_seconds": 3600.5,
-  "memory": {
-    "process_rss_mb": 45.2,
-    "process_vms_mb": 512.3,
-    "children_rss_mb": 1024.5,
-    "total_rss_mb": 1069.7,
-    "chromium_processes": 3,
-    "total_children": 15,
-    "chromium_details": [
-      {"pid": 12345, "name": "chrome-headless-shell", "rss_mb": 150.2},
-      {"pid": 12346, "name": "chrome-headless-shell", "rss_mb": 120.4},
-      {"pid": 12347, "name": "chrome-headless-shell", "rss_mb": 98.6}
-    ]
-  }
-}
-```
-
-### 详细统计
-```
-GET /stats
-```
-
-响应示例：
-```json
-{
-  "service": {
-    "name": "Browser Fetch Service",
-    "version": "1.0.0",
-    "uptime_seconds": 3600.5,
-    "request_count": 42,
-    "requests_per_second": 0.012
-  },
-  "browser_pool": {
-    "pool_size": 5,
-    "max_concurrent": 10,
-    "initialized": true,
-    "active_browsers": 5
-  },
-  "memory": {
-    "process_mb": 45.2,
-    "children_mb": 2048.5,
-    "total_mb": 2093.7,
-    "chromium_processes": 5,
-    "total_children": 5
-  },
-  "system": {
-    "cpu_percent": 15.5,
-    "memory_total_gb": 16.0,
-    "memory_available_gb": 8.5,
-    "memory_percent": 46.9
-  }
-}
-```
-
-### Prometheus 监控指标
-```
-GET /metrics
-```
+## 📡 API 文档
 
 ### 抓取网页
-```
+
+```http
 POST /fetch_url
 Content-Type: application/json
 
 {
   "url": "https://example.com",
-  "wait_time": 200,
-  "wait_for_selector": ".content",
-  "screenshot": true,
-  "block_media": true
+  "wait_time": 200,           // 可选：等待时间（毫秒）
+  "wait_for_selector": ".content",  // 可选：等待选择器出现
+  "screenshot": true,          // 可选：是否截图
+  "block_media": true          // 可选：是否阻止图片/视频加载
 }
 ```
 
-响应示例：
+**响应：**
+
 ```json
 {
   "success": true,
   "fetched_url": "https://example.com",
-  "title": "Example Domain",
-  "markdown_content": "# Example Domain\n\nThis is a sample page...",
-  "screenshot_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "title": "页面标题",
+  "content": "# Markdown 内容",
+  "screenshot": "base64编码的JPEG截图",
   "content_length": 1234,
-  "fetched_at": "2026-02-13 12:30:45",
+  "fetched_at": "2026-02-13 12:00:00",
   "duration_seconds": 2.35
 }
 ```
 
-**请求参数：**
+---
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `url` | string | 必填 | 要抓取的 URL |
-| `wait_time` | int | 200 | 等待时间（毫秒） |
-| `wait_for_selector` | string | "" | 等待选择器出现 |
-| `screenshot` | bool | true | 是否截图 |
-| `block_media` | bool | true | 是否阻止图片/视频加载（降低内存） |
+## 🔬 健康检查
 
-**`wait_time` 说明：**
+### 健康状态
 
-页面加载后的固定等待时间，用于等待 JavaScript 执行或动态内容加载。
+```http
+GET /health
+```
 
-| 场景 | 推荐值 | 说明 |
-|------|--------|------|
-| 静态页面 | 0-100 | 页面直接渲染，无需等待 |
-| 轻量动态 | 200-500 | 有少量 JS 动态内容 |
-| 中等动态 | 500-1000 | 有 AJAX 加载数据 |
-| 重度动态 | 1000-2000 | 复杂单页应用 (SPA) |
-| 极端场景 | 2000+ | 需要长时间渲染 |
-
-**注意：** `wait_time` 与 `wait_for_selector` 可以同时使用，会先执行 `wait_time` 再等待选择器。
-
-**`wait_for_selector` 选择器示例：**
-
-| 场景 | 选择器 | 说明 |
-|------|--------|------|
-| CSS 类 | `.content` | 等待 class="content" 的元素 |
-| ID | `#main` | 等待 id="main" 的元素 |
-| 标签 | `article` | 等待 `<article>` 元素 |
-| 属性 | `[data-loaded]` | 等待带有 data-loaded 属性的元素 |
-| 组合 | `.post-body p` | 等待 .post-body 内的 `<p>` 元素 |
-| 动态内容 | `.loaded` | 等待动态加载的内容标记 |
-
-**使用示例：**
+**响应：**
 
 ```json
-// 等待主要内容加载
-{ "wait_for_selector": ".main-content" }
-
-// 等待文章加载
-{ "wait_for_selector": "article" }
-
-// 等待数据加载完成
-{ "wait_for_selector": "[data-ready='true']" }
-
-// 等待评论加载
-{ "wait_for_selector": ".comments-section" }
+{
+  "status": "healthy",
+  "browser_started": true,
+  "pool_size": 3,
+  "request_count": 42,
+  "uptime_seconds": 3600
+}
 ```
 
-**响应字段：**
+### 详细统计
 
-| 字段 | 说明 |
-|------|------|
-| `success` | 是否成功 |
-| `fetched_url` | 实际抓取的 URL |
-| `title` | 页面标题 |
-| `markdown_content` | Markdown 格式内容 |
-| `screenshot_base64` | 截图 Base64 |
-| `content_length` | 内容长度 |
-| `fetched_at` | 抓取时间 |
-| `duration_seconds` | 耗时（秒） |
-
-## 测试
-
-批量抓取测试：
-```bash
-python test_batch_fetch.py
+```http
+GET /stats
 ```
 
-测试结果会保存到 `dist/` 目录。
+**响应：**
 
-## Docker 部署
-
-### 构建镜像
-```bash
-docker build -t browser-fetch .
+```json
+{
+  "service": {
+    "name": "Browser Fetch Service",
+    "version": "1.0.0",
+    "uptime_seconds": 3600,
+    "request_count": 42,
+    "requests_per_second": 0.012
+  },
+  "browser_pool": {
+    "pool_size": 3,
+    "max_concurrent": 10,
+    "initialized": true,
+    "active_browsers": 2,
+    "total_requests": 42
+  },
+  "memory": {
+    "process_rss_mb": 45.2,
+    "children_rss_mb": 1024.5,
+    "total_rss_mb": 1069.7,
+    "chromium_processes": 3,
+    "chromium_details": [
+      {"pid": 12345, "name": "chrome-headless-shell", "rss_mb": 150.2},
+      {"pid": 12346, "name": "chrome-headless-shell", "rss_mb": 120.4}
+    ]
+  }
+}
 ```
 
-### 运行容器
-```bash
-docker run -p 2025:2025 \
-  -e BROWSER_POOL_SIZE=5 \
-  browser-fetch
-```
+---
+
+## 🐳 Docker 部署
 
 ### 使用 Docker Hub
+
 ```bash
-docker pull izerui/browser-fetch:latest
-docker run -p 2025:2025 izerui/browser-fetch:latest
+docker pull zavierui/browser-fetch:latest
+docker run -p 2025:2025 zavierui/browser-fetch:latest
 ```
 
-## 架构说明
+### 构建镜像
 
-### 异步架构
-- ✅ 完全使用 `async/await`，无阻塞调用
-- ✅ Async Playwright API
-- ✅ 异步 Markdown 转换
-- ✅ 所有 I/O 操作都是异步的
-
-### 高并发支持
-```
-浏览器实例池设计：
-┌─────────────────────────────────────────┐
-│         BrowserPool (5 个实例)           │
-├─────────────────────────────────────────┤
-│  实例 1 ──┐                              │
-│  实例 2 ──┼──> 并发处理请求               │
-│  实例 3 ──┤    (轮询分配)                │
-│  实例 4 ──┤                              │
-│  实例 5 ──┘                              │
-└─────────────────────────────────────────┘
+```bash
+docker build -t browser-fetch .
+docker run -p 2025:2025 browser-fetch
 ```
 
-**理论最大并发：** `BROWSER_POOL_SIZE × MAX_CONCURRENT_PAGES`
+---
 
-默认配置：3 实例 × 10 并发 = **30 个同时抓取请求**
+## 📊 并发配置
 
-### 内存优化机制
+服务使用两层并发控制：
 
-为防止内存泄漏，服务采用**定期重启策略**：
+1. **全局并发限制**：`BROWSER_POOL_SIZE × MAX_CONCURRENT_PAGES`
+2. **每个浏览器实例**：最多 `MAX_CONCURRENT_PAGES` 个并发页面
 
-- 每个浏览器实例抓取 **10 次**后自动重启
-- 重启过程不中断服务
-- 内存使用保持稳定
+**理论最大并发：**
 
-**额外优化：**
-- **媒体资源拦截** - 默认阻止图片/视频加载，大幅降低内存
-- **单进程模式** - 使用 `--single-process` 减少子进程
-- **V8 内存限制** - `--max-old-space-size=256` 限制堆内存
+| BROWSER_POOL_SIZE | MAX_CONCURRENT_PAGES | 理论最大并发 |
+|-----------------|---------------------|----------------|
+| 3 | 10 | **30** |
+| 5 | 10 | **50** |
+| 5 | 15 | **75** |
 
-## 内存使用估算
+---
 
-### 单个 Chromium 实例内存占用
+## 💾 内存管理
 
-| 组件 | 内存占用 |
-|------|----------|
-| Chromium 主进程 | ~50-80 MB |
-| 渲染进程 | ~100-200 MB |
-| 每个标签页/页面 | ~30-50 MB |
-| 基础开销 | ~20 MB |
+服务内置多项内存优化机制：
 
-### 不同配置方案内存估算
+### 自动重启
 
-| BROWSER_POOL_SIZE | MAX_CONCURRENT_PAGES | 最小内存 | 最大内存 | 峰值内存 |
-|-------------------|----------------------|----------|----------|----------|
-| 2 | 3 | 300 MB | 500 MB | ~400 MB |
-| 3 | 5 | 600 MB | 900 MB | ~750 MB |
-| 5 | 10 | 1.5 GB | 2.5 GB | ~2 GB |
-| 10 | 20 | 3 GB | 5 GB | ~4 GB |
+- 浏览器空闲超过 `BROWSER_IDLE_TIMEOUT` 秒时自动重启
+- 释放累积内存，保持服务稳定
 
-**注意：** 以上估算已启用 `block_media: true`（阻止图片/视频加载），可节省 40-60% 内存。
+### 资源拦截
 
-### 推荐配置
+默认阻止以下资源类型加载（可节省 40-60% 内存）：
 
-| 场景 | 内存预算 | 推荐配置 |
-|------|----------|----------|
-| 开发测试 | 1 GB | POOL_SIZE=2, CONCURRENT=3 |
-| 小型生产 | 2 GB | POOL_SIZE=3, CONCURRENT=10 (默认) |
-| 中型生产 | 4 GB | POOL_SIZE=5, CONCURRENT=10 |
-| 大型生产 | 8 GB+ | POOL_SIZE=10, CONCURRENT=15 |
+- 图片 (`image`)
+- 媒体文件 (`media`, `audio`, `video`)
 
-## 监控和调试
+**保留资源：**
 
-### 检查服务状态
+- 样式表 (`stylesheet`)
+- 脚本 (`script`)
+- 字体 (`font`)
+- 文档 (`document`)
+
+### 内存估算
+
+| 配置 | 最小内存 | 最大内存 | 峰值内存 |
+|------|----------|----------|----------|
+| POOL=2, CONCURRENT=3 | 300 MB | 500 MB | ~400 MB |
+| POOL=3, CONCURRENT=10 | 600 MB | 900 MB | ~750 MB |
+| POOL=5, CONCURRENT=10 | 1.5 GB | 2.5 GB | ~2 GB |
+
+*以上估算已启用媒体拦截*
+
+---
+
+## 📈 监控端点
+
+### 健康检查
+
 ```bash
 curl http://localhost:2025/health
 ```
 
-### 获取详细统计
+### 统计信息
+
 ```bash
 curl http://localhost:2025/stats
 ```
 
 ### Prometheus 指标
+
 ```bash
 curl http://localhost:2025/metrics
 ```
 
-### 查看进程内存使用
-```bash
-# 查看所有 Chromium 进程
-ps aux | grep chromium
+---
 
-# 实时监控
-watch -n 1 'ps aux | grep chromium | grep -v grep'
+## 🔧 开发说明
+
+### 项目结构
+
+```
+browser-fetch/
+├── app.py                 # 主应用程序
+├── main.py               # 启动入口
+├── requirements.txt        # Python 依赖
+├── .env                  # 环境配置
+└── agent.md              # AI Agent 使用说明
 ```
 
-### Docker 容器监控
-```bash
-docker stats browser-fetch
-```
+### 核心组件
 
-## 性能特性
+- **FastAPI** - Web 框架
+- **Playwright** - 浏览器自动化
+- **Markdownify** - HTML 转 Markdown
+- **Rich** - 美化终端输出
+- **Playwright Stealth** - 反爬虫检测
 
-| 特性 | 状态 | 说明 |
-|------|------|------|
-| 异步架构 | ✅ | 完全使用 `async/await`，无阻塞调用 |
-| 高并发支持 | ✅ | 浏览器实例池 + 信号量控制 |
-| 默认并发数 | 30 | 3 实例 × 10 并发/实例 |
-| 可扩展性 | ✅ | 通过环境变量调整池大小 |
-| 内存管理 | ✅ | 定期重启防止泄漏 |
-| 实时监控 | ✅ | 抓取过程输出内存状态，包含每个进程详情 |
-| 智能滚动 | ✅ | 自动滚动到底部加载懒加载内容 |
-| 整页截图 | ✅ | 支持截取完整页面，JPEG 压缩减小文件 |
-| 媒体拦截 | ✅ | 可选阻止图片/视频，降低 40-60% 内存 |
-| 反爬虫 | ✅ | 使用 playwright-stealth 绕过检测 |
-| 链接修复 | ✅ | 自动将相对链接转换为绝对链接 |
+---
+
+## 📄 许可证
+
+MIT License
