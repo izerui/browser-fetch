@@ -452,8 +452,8 @@ class BrowserPool:
                     continue
 
         async with self.semaphore:
-            # 获取一个可用的浏览器实例（轮询）
-            browser_index = id(asyncio.current_task()) % len(self.browsers)
+            # 获取一个可用的浏览器实例（原子轮询）
+            browser_index = self._request_count % len(self.browsers)
             browser = self.browsers[browser_index]
 
             context = None
