@@ -433,31 +433,21 @@ class BrowserPool:
         self._request_count += 1
         start_time = time.time()
 
-        # 内存监控任务
-        monitor_task = None
-        stop_monitor = asyncio.Event()
-
-        async def monitor_memory():
-            """异步监控内存使用情况，每2秒输出一次"""
-            while not stop_monitor.is_set():
-                mem_info = get_memory_info()
-                print_memory_summary(
-                    "📊 抓取中",
-                    mem_info,
-                    browser_pool=self,
-                    highlight_browser=browser_index
-                )
-                try:
-                    await asyncio.wait_for(stop_monitor.wait(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    continue
-
         async with self.semaphore:
             # 获取一个可用的浏览器实例（原子轮询）
             browser_index = self._request_count % len(self.browsers)
             # 先标记浏览器正在使用（避免被监控任务重启）
             self._active_requests[browser_index] = True
             browser = self.browsers[browser_index]
+
+            # 打印开始抓取（带监控面板）
+            mem_info = get_memory_info()
+            print_memory_summary(
+                f"开始抓取 ({request.url[:50]}...)",
+                mem_info,
+                browser_pool=self,
+                highlight_browser=browser_index
+            )
 
             # 使用锁防止在请求过程中重启
             async with self._browser_locks[browser_index]:
@@ -466,9 +456,6 @@ class BrowserPool:
             page = None
 
             try:
-                # 启动内存监控
-                monitor_task = asyncio.create_task(monitor_memory())
-
                 # 每次创建新的 context（干净隔离，创建很快）
                 context = await browser.new_context(
                     viewport={"width": 1280, "height": 720},
@@ -563,14 +550,6 @@ class BrowserPool:
                 )
 
             finally:
-                # 停止内存监控
-                stop_monitor.set()
-                if monitor_task:
-                    try:
-                        await asyncio.wait_for(monitor_task, timeout=0.5)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
-                        pass
-
                 # 关闭页面和 context，彻底释放内存
                 if page:
                     try:
