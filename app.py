@@ -455,6 +455,8 @@ class BrowserPool:
         async with self.semaphore:
             # 获取一个可用的浏览器实例（原子轮询）
             browser_index = self._request_count % len(self.browsers)
+            # 先标记浏览器正在使用（避免被监控任务重启）
+            self._active_requests[browser_index] = True
             browser = self.browsers[browser_index]
 
             # 使用锁防止在请求过程中重启
@@ -464,9 +466,6 @@ class BrowserPool:
             page = None
 
             try:
-                # 先标记浏览器正在使用（避免被监控任务重启）
-                self._active_requests[browser_index] = True
-
                 # 启动内存监控
                 monitor_task = asyncio.create_task(monitor_memory())
 
@@ -639,29 +638,27 @@ class BrowserPool:
                     # 检查是否有活跃请求
                     has_active_request = self._active_requests[i] is not None
 
-                    # 重启条件：达到10次 或 (有使用过且空闲超过5秒且无活跃请求)
-                    should_restart = not has_active_request and (
-                        self._fetch_counts[i] >= self._restart_threshold or
-                        (has_been_used and idle_time > self._idle_timeout)
-                    )
+                    # 重启条件：有使用过且空闲超过5秒且无活跃请求
+                    should_restart = has_been_used and idle_time > self._idle_timeout and not has_active_request
 
                     if should_restart:
                         self._fetch_counts[i] = 0
-                        try:
-                            await self.browsers[i].close()
-                            new_browser = await self.playwright.chromium.launch(
-                                headless=Config.HEADLESS,
-                                args=Config.BROWSER_ARGS
-                            )
-                            self.browsers[i] = new_browser
+                        async with self._browser_locks[i]:
+                            try:
+                                await self.browsers[i].close()
+                                new_browser = await self.playwright.chromium.launch(
+                                    headless=Config.HEADLESS,
+                                    args=Config.BROWSER_ARGS
+                                )
+                                self.browsers[i] = new_browser
 
-                            # 重启后垃圾回收并输出状态
-                            import gc
-                            gc.collect()
-                            mem_info = get_memory_info()
-                            print_memory_summary("✓ 浏览器重启完成", mem_info, browser_pool=self)
-                        except Exception as e:
-                            logger.error(f"重启浏览器 {i} 失败: {e}")
+                                # 重启后垃圾回收并输出状态
+                                import gc
+                                gc.collect()
+                                mem_info = get_memory_info()
+                                print_memory_summary("✓ 浏览器重启完成", mem_info, browser_pool=self)
+                            except Exception as e:
+                                logger.error(f"重启浏览器 {i} 失败: {e}")
             except Exception as e:
                 logger.error(f"监控任务异常: {e}")
 
