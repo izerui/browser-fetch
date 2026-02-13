@@ -40,15 +40,10 @@ logger = logging.getLogger(__name__)
 class Config:
     """服务配置"""
 
-    # 服务配置
-    PORT = int(os.getenv('BROWSER_SERVICE_PORT', '2025'))
-    HOST = os.getenv('BROWSER_SERVICE_HOST', '0.0.0.0')
-
     # 浏览器配置
     POOL_SIZE = int(os.getenv('BROWSER_POOL_SIZE', '3'))  # 减少：5->3，每个浏览器约 200-400MB
     MAX_CONCURRENT_PAGES = int(os.getenv('MAX_CONCURRENT_PAGES', '10'))
     HEADLESS = os.getenv('HEADLESS', 'true').lower() == 'true'
-    MAX_SCREENSHOT_SIZE = int(os.getenv('MAX_SCREENSHOT_SIZE', '5242880'))
     IDLE_TIMEOUT = int(os.getenv('BROWSER_IDLE_TIMEOUT', '5'))  # 空闲超时时间（秒），超时后重启浏览器
 
     # 日志配置

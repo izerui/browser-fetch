@@ -323,13 +323,13 @@ MAX_CONCURRENT_PAGES = 10  # 每个实例的最大并发数
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| BROWSER_SERVICE_PORT | 2025 | 服务端口 |
-| BROWSER_SERVICE_HOST | 0.0.0.0 | 服务主机 |
 | HEADLESS | true | 无头模式 |
 | BROWSER_POOL_SIZE | 3 | 浏览器池大小（建议：2-5，每个约 200-400MB 内存） |
 | MAX_CONCURRENT_PAGES | 10 | 每个浏览器实例的最大并发页面数（理论最大并发 = POOL_SIZE × MAX_CONCURRENT_PAGES） |
-| MAX_SCREENSHOT_SIZE | 5242880 | 最大截图大小（字节，5242880 = 5MB） |
 | BROWSER_IDLE_TIMEOUT | 5 | 空闲超时时间（秒），浏览器空闲超过此时间后自动重启释放内存（设为 0 禁用） |
+| LOG_LEVEL | INFO | 日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL） |
+
+**注意：** `BROWSER_SERVICE_PORT` 和 `BROWSER_SERVICE_HOST` 由 `main.py` 直接从 `.env` 读取，不在 `Config` 类中定义。
 
 ### 内存估算
 
