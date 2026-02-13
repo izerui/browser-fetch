@@ -2,10 +2,10 @@
 
 一个独立的、支持高并发的网页抓取服务，使用 Playwright 实现。
 
-[![Docker Hub](https://img.shields.io/badge/docker-image-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
-[![Docker Pulls](https://img.shields.io/badge/docker-pulls-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
-[![Docker Size](https://img.shields.io/badge/docker-image-size-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
-![Docker Image](https://img.shields.io/badge/docker-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+[![DockerHub](https://img.shields.io/badge/docker-image-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+[![DockerPulls](https://img.shields.io/badge/docker-pulls-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+[![DockerSize](https://img.shields.io/badge/docker-image-size-zavierui%2Fbrowser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
+![DockerImage](https://img.shields.io/badge/docker-zavierui/browser-fetch-blue?logo=docker)](https://hub.docker.com/r/zavierui/browser-fetch)
 
 一个独立的、支持高并发的网页抓取服务，使用 **Playwright** 实现。
 
@@ -21,7 +21,7 @@
 - 🔧 **链接修复** - 自动将相对链接转换为绝对链接
 - 🕵 **反爬虫** - 集成 playwright-stealth
 - ⚙️ **异步架构** - 完全异步，无阻塞调用
-- 🐳 **Docker 支持** - 一键部署
+- 🐳 **Docker支持** - 一键部署
 
 ---
 
@@ -287,7 +287,7 @@ LOG_LEVEL=INFO             # DEBUG, INFO, WARNING, ERROR, CRITICAL
 # 方式一：使用启动脚本（推荐）
 ./start.sh
 
-# 方式二：直接运行
+# 方式二：直接运行（自动使用 uvicorn）
 python main.py
 ```
 
@@ -388,9 +388,9 @@ GET /stats
 
 ---
 
-## 🐳 Docker 部署
+## 🐳 Docker部署
 
-### 使用 Docker Hub
+### 使用 DockerHub
 
 ```bash
 docker pull zavierui/browser-fetch:latest
