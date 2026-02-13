@@ -242,22 +242,20 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
 
-            # 状态图标和样式（统一使用高亮背景色风格）
+            # 状态图标和样式（只保留3个状态）
             if i == highlight_browser:
-                status_icon = "▶"
+                status_icon = "▶ 准备开始"
                 status_style = "[bold white on cyan]"
             elif has_active:
-                status_icon = "⚡"
+                status_icon = "⚡ 活跃中"
                 status_style = "[bold black on yellow]"
-            elif count >= 8:
-                status_icon = "⚠"
-                status_style = "[bold white on red]"
             elif count == 0:
-                status_icon = "○"
-                status_style = "[bold black on white]"
+                status_icon = "○ 从未使用"
+                status_style = "[dim]"
             else:
-                status_icon = "✓"
-                status_style = "[bold white on green]"
+                # 已使用但当前空闲
+                status_icon = "💤 空闲"
+                status_style = "[dim]"
 
             # 内存显示
             if browser_mem_mb > 0:
@@ -265,10 +263,6 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
                 mem_text = f"{mem_color}{format_memory_mb(browser_mem_mb)}[/]"
             else:
                 mem_text = "[dim]--[/]"
-
-            # 重启倒计时
-            restart_left = browser_pool._restart_threshold - count
-            restart_text = f"{restart_left}次后重启" if restart_left > 3 else f"[yellow]{restart_left}次后重启[/]"
 
             # PID 显示（如果有）
             pid_part = ""
@@ -279,7 +273,7 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
                 pid_part = f"  |  PID: [cyan]{pid_str}[/]"
 
             rich_console.print(
-                f"  {status_style}{status_icon}[/]  [cyan]B{i}[/]  {count}次  |  {restart_text}{pid_part}  |  内存: {mem_text}"
+                f"  {status_style}{status_icon}[/]  [cyan]B{i}[/]{pid_part}  |  内存: {mem_text}"
             )
 
     rich_console.print()
@@ -433,12 +427,12 @@ class BrowserPool:
         if not self._initialized:
             await self.initialize()
 
-        self._request_count += 1
         start_time = time.time()
 
         async with self.semaphore:
-            # 获取一个可用的浏览器实例（原子轮询）
-            browser_index = self._request_count % len(self.browsers)
+            # 原子递增并获取浏览器索引（确保轮询分配）
+            self._request_count += 1
+            browser_index = (self._request_count - 1) % len(self.browsers)
             browser = self.browsers[browser_index]
 
             # 获取浏览器引用（使用条件变量保护）
@@ -658,7 +652,7 @@ class BrowserPool:
                             import gc
                             gc.collect()
                             mem_info = get_memory_info()
-                            print_memory_summary("✓ 浏览器重启完成", mem_info, browser_pool=self)
+                            print_memory_summary(f"✓ 浏览器 B{i} 重启完成", mem_info, browser_pool=self)
                         except Exception as e:
                             logger.error(f"重启浏览器 {i} 失败: {e}")
                         finally:

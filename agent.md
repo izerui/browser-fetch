@@ -146,7 +146,163 @@ if not has_active_request:  # 只有无活跃请求时才重启
 | Markdown 图片 | `![alt](img.jpg)` | `![alt](https://sample.com/img.jpg)` |
 | 空链接 | `href=""` | `href="#"` |
 
-**实现位置：** `app.py` 第 542-598 行
+**实现位置：** `app.py` 第 708-758 行
+
+### 8. 读写锁机制（引用计数 + Condition 变量）
+
+**问题场景：** 监控进程要重启浏览器时，刚好有请求正在使用该浏览器，导致请求失败。
+
+**解决方案：** 使用引用计数 + `asyncio.Condition` 实现读写锁模式
+
+| 角色 | 允许并发 | 说明 |
+|------|----------|------|
+| 请求（读者） | ✅ 是 | 多个请求可同时使用同一浏览器 |
+| 重启（写者） | ❌ 否 | 需要等待所有请求完成 |
+
+**核心数据结构：**
+```python
+# app.py 第 370-373 行
+self._ref_counts = [0] * pool_size      # 每个浏览器的活跃请求计数
+self._restarting = [False] * pool_size   # 是否正在重启
+self._conditions = [asyncio.Condition() for _ in range(pool_size)]  # 条件变量
+```
+
+**工作流程：**
+
+| 步骤 | 请求侧 | 监控侧 |
+|------|--------|--------|
+| 1. 获取锁 | `async with cond:` | `async with cond:` |
+| 2. 等待 | `while self._restarting[i]: await cond.wait()` | 无 |
+| 3. 操作 | `self._ref_counts[i] += 1` | `self._restarting[i] = True` |
+| 4. 释放 | `self._ref_counts[i] -= 1; cond.notify_all()` | `self._restarting[i] = False; cond.notify_all()` |
+
+**代码实现：**
+
+请求获取浏览器（`app.py` 第 444-452 行）：
+```python
+cond = self._conditions[browser_index]
+async with cond:
+    # 如果正在重启，等待完成
+    while self._restarting[browser_index]:
+        logger.info(f"浏览器 {browser_index} 正在重启，等待完成...")
+        await cond.wait()
+    # 增加引用计数
+    self._ref_counts[browser_index] += 1
+```
+
+请求完成（`app.py` 第 586-593 行）：
+```python
+cond = self._conditions[browser_index]
+async with cond:
+    self._ref_counts[browser_index] -= 1
+    # 通知等待的监控任务（如果有）
+    cond.notify_all()
+```
+
+监控重启（`app.py` 第 631-661 行）：
+```python
+# 重启条件检查
+should_restart = (
+    has_been_used
+    and idle_time > self._idle_timeout
+    and self._ref_counts[i] == 0      # 无活跃请求
+    and not self._restarting[i]       # 未在重启中
+)
+
+async with cond:
+    self._restarting[i] = True        # 标记为重启，阻止新请求
+
+try:
+    # 重启浏览器...
+    await self.browsers[i].close()
+    self.browsers[i] = await self.playwright.chromium.launch(...)
+finally:
+    async with cond:
+        self._restarting[i] = False
+        cond.notify_all()              # 通知等待的请求
+```
+
+**时序图：**
+
+```
+请求A          请求B          监控任务
+  │              │              │
+  ├─ acquire ───┤              │
+  ├─ ref=1 ─────┤              │
+  │              ├─ acquire ───┤
+  │              ├─ ref=2 ─────┤
+  │              │              ├─ 检查 ref=2，跳过
+  │              │              │
+  ├─ ref=1 ─────┤              │
+  │              ├─ ref=1 ─────┤
+  │              │              ├─ 检查 ref=0，开始重启
+  │              │              ├─ restarting=True
+  │              │              │
+  ├─ acquire ───┤              │
+  ├─ 等待 ──────┤              │
+  │              │              ├─ 重启完成
+  │              │              ├─ restarting=False
+  │              │              ├─ notify_all()
+  ├─ 继续执行 ──┤              │
+```
+
+### 9. 并发负载均衡分配逻辑
+
+**问题场景：** 多个并发请求同时到达时，所有请求都被分配到同一个浏览器实例。
+
+**根本原因：** `self._request_count += 1` 在 `semaphore` 外部执行
+
+**错误示例：**
+
+```python
+# 错误写法（修复前）
+self._request_count += 1              # 在 semaphore 外部
+
+async with self.semaphore:
+    browser_index = self._request_count % len(self.browsers)
+```
+
+**执行流程：**
+```
+时间线：请求A/B/C/D 同时到达
+
+请求A: _count=0 → _count=1 → 等待 semaphore
+请求B: _count=1 → _count=2 → 等待 semaphore
+请求C: _count=2 → _count=3 → 等待 semaphore
+请求D: _count=3 → _count=4 → 等待 semaphore
+
+进入 semaphore 后，所有请求都用 _count=4 计算：
+请求A: 4 % 4 = 0  → 浏览器0
+请求B: 4 % 4 = 0  → 浏览器0
+请求C: 4 % 4 = 0  → 浏览器0
+请求D: 4 % 4 = 0  → 浏览器0
+```
+
+**解决方案：** 把计数器移入 semaphore 内部
+
+```python
+# 正确写法（修复后）
+async with self.semaphore:
+    self._request_count += 1              # 在 semaphore 内部
+    browser_index = (self._request_count - 1) % len(self.browsers)
+```
+
+**修复后流程：**
+```
+时间线：请求A/B/C/D 同时到达
+
+请求A: 进入 semaphore → _count=1 → 0%4=0 → 浏览器0
+请求B: 进入 semaphore → _count=2 → 1%4=1 → 浏览器1
+请求C: 进入 semaphore → _count=3 → 2%4=2 → 浏览器2
+请求D: 进入 semaphore → _count=4 → 3%4=3 → 浏览器3
+```
+
+**代码位置：** `app.py` 第 436-442 行
+
+**关键点：**
+1. `self._request_count += 1` 必须在 `async with self.semaphore` 内部
+2. 使用 `(self._request_count - 1)` 确保索引从 0 开始
+3. `semaphore` 限制总并发数为 `POOL_SIZE`，防止浏览器实例过载
 
 ---
 
@@ -276,17 +432,16 @@ watch -n 1 'curl -s http://localhost:2025/health | jq ".memory"'
 
 | 功能 | 文件位置 | 行号 |
 |------|----------|------|
-| 页面加载策略 | app.py | 324 |
-| 整页截图 | app.py | 356-360 |
-| 媒体拦截 | app.py | 306-314 |
+| 页面加载策略 | app.py | 494 |
+| 整页截图 | app.py | 530-535 |
+| 媒体拦截 | app.py | 477-485 |
 | 内存监控函数 | app.py | 108-142 |
-| Rich 美化输出 | app.py | 145-214 |
-| 智能重启 | app.py | 449-497 |
-| 活跃请求追踪 | app.py | 173, 292, 421 |
-| 链接修复 | app.py | 542-598 |
-| 智能滚动 | app.py | 499-534 |
-| Rich 进度条 | app.py | 338-358 (启动), 425-438 (关闭) |
-| Rich 内存表格 | app.py | 145-214 (函数定义), 调用点见各场景 |
+| Rich 美化输出 | app.py | 145-273 |
+| 读写锁机制（引用计数+Condition） | app.py | 309-313 (数据结构), 444-452 (请求获取), 586-593 (请求完成), 617-661 (监控重启) |
+| 并发负载均衡分配 | app.py | 436-442 |
+| 智能滚动 | app.py | 680-713 |
+| 链接修复 | app.py | 716-758 |
+| Rich 进度条 | app.py | 338-365 (启动), 395-415 (关闭) |
 
 ---
 
