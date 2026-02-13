@@ -89,6 +89,7 @@ class FetchRequest(BaseModel):
     wait_time: int = 200  # 等待时间（毫秒）
     wait_for_selector: str = ""  # 等待选择器
     screenshot: bool = True  # 是否截图
+    block_media: bool = True  # 是否阻止图片/视频加载（降低内存）
 
 
 class FetchResponse(BaseModel):
@@ -266,6 +267,17 @@ class BrowserPool:
                 )
 
                 page = await context.new_page()
+
+                # 只拦截真正的媒体文件，不阻止样式和字体
+                if request.block_media:
+                    async def block_media_route(route, request):
+                        resource_type = request.resource_type
+                        # 只阻止图片、视频、音频，允许所有其他资源
+                        if resource_type in ["image", "media", "audio", "video"]:
+                            await route.abort()
+                        else:
+                            await route.continue_()
+                    await page.route("**", block_media_route)
 
                 # 应用反爬虫脚本
                 await self._apply_stealth(page)
