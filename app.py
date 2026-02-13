@@ -631,9 +631,9 @@ class BrowserPool:
                     has_active_request = self._active_requests[i] is not None
 
                     # 重启条件：达到10次 或 (有使用过且空闲超过5秒且无活跃请求)
-                    should_restart = (
+                    should_restart = not has_active_request and (
                         self._fetch_counts[i] >= self._restart_threshold or
-                        (has_been_used and idle_time > self._idle_timeout and not has_active_request)
+                        (has_been_used and idle_time > self._idle_timeout)
                     )
 
                     if should_restart:
