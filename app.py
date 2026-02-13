@@ -13,6 +13,7 @@ import time
 import psutil
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urljoin
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -265,6 +266,8 @@ class BrowserPool:
                 # 异步转换为 Markdown（避免阻塞事件循环）
                 markdown_content = await asyncio.to_thread(markdownify, html_content)
                 cleaned_content = self._clean_markdown(markdown_content)
+                # 修复相对链接为绝对链接
+                fixed_content = self._fix_links(cleaned_content, request.url)
 
                 # 截图
                 screenshot_b64 = ""
@@ -280,9 +283,9 @@ class BrowserPool:
                     success=True,
                     fetched_url=request.url,
                     title=title or "无标题",
-                    content=cleaned_content,
+                    content=fixed_content,
                     screenshot=screenshot_b64,
-                    content_length=len(cleaned_content),
+                    content_length=len(fixed_content),
                     fetched_at=time.strftime("%Y-%m-%d %H:%M:%S"),
                     duration_seconds=duration_seconds
                 )
@@ -361,6 +364,64 @@ class BrowserPool:
         content = re.sub(r'\n{3,}', '\n\n', content)
         content = re.sub(r'^\s+$/gm', '', content)
         return content.strip()
+
+    def _fix_links(self, content: str, base_url: str) -> str:
+        """修复 Markdown 中的相对链接为绝对链接
+
+        Args:
+            content: Markdown 内容
+            base_url: 基础 URL
+
+        Returns:
+            修复后的 Markdown 内容
+        """
+        # 提取基础 URL 的协议（http 或 https）
+        base_protocol = 'https://' if base_url.startswith('https://') else 'http://'
+
+        # 修复 Markdown 链接语法 [文本](链接) 和图片 ![alt](url)
+        def fix_markdown_link(match):
+            is_image = match.group(1).startswith('!')  # 是否是图片
+            text = match.group(2)
+            url = match.group(3)
+            # 跳过已经是绝对链接的
+            if url.startswith(('http://', 'https://', '#', 'mailto:', 'tel:')):
+                return match.group(0)
+            # 处理协议相对链接 //example.com
+            if url.startswith('//'):
+                url = base_protocol + url
+                return match.group(0).replace(f']({match.group(3)})', f']({url})')
+            # 转换为绝对链接
+            absolute_url = urljoin(base_url, url)
+            return match.group(0).replace(f']({match.group(3)})', f']({absolute_url})')
+
+        # 匹配 [text](url) 和 ![alt](url)
+        content = re.sub(r'(\!?\[)([^\]]+)\]\(([^)]+)\)', fix_markdown_link, content)
+
+        # 修复 HTML 标签中的链接
+        def fix_html_link(match):
+            tag = match.group(1)
+            url = match.group(2)
+            # 移除 JavaScript 链接（安全考虑）
+            if url.startswith('javascript:'):
+                return f'{tag}="#"'
+            # 跳过已经是绝对链接的
+            if url.startswith(('http://', 'https://', '#', 'mailto:', 'tel:', 'data:')):
+                return match.group(0)
+            # 处理协议相对链接 //example.com
+            if url.startswith('//'):
+                absolute_url = base_protocol + url
+                return f'{tag}="{absolute_url}"'
+            # 转换为绝对链接
+            absolute_url = urljoin(base_url, url)
+            return f'{tag}="{absolute_url}"'
+
+        # 匹配 href 和 src 属性
+        content = re.sub(r'(href|src)="([^"]*)"', fix_html_link, content)
+
+        # 移除空的 href 属性（会导致页面跳转到自身）
+        content = re.sub(r'href=""', 'href="#"', content)
+
+        return content
 
 
 # ==================== 全局实例池 ====================
