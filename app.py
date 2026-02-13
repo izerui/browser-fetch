@@ -183,7 +183,7 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
     chromium_count = mem_info['chromium_processes']
 
     # 统计信息
-    active_count = sum(1 for x in browser_pool._active_requests if x is not None) if browser_pool else 0
+    active_count = sum(browser_pool._ref_counts) if browser_pool else 0
     total_requests = browser_pool._request_count if browser_pool else 0
     uptime = int(time.time() - browser_pool._start_time) if browser_pool else 0
 
@@ -223,7 +223,7 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
 
         for i in range(browser_pool.pool_size):
             count = browser_pool._fetch_counts[i]
-            has_active = browser_pool._active_requests[i] is not None
+            has_active = browser_pool._ref_counts[i] > 0
 
             # 计算该浏览器实例的内存，并收集对应的进程 PID
             browser_mem_mb = 0
@@ -304,8 +304,11 @@ class BrowserPool:
         self._last_used: list = [0.0] * pool_size  # 每个浏览器的最后使用时间
         self._idle_timeout = 5  # 空闲 5 秒后重启（如果有使用过）
         self._monitor_stop = None  # 监控任务停止事件
-        self._active_requests: list = [None] * pool_size  # 每个浏览器当前是否有活跃请求的锁
-        self._browser_locks: list = [asyncio.Lock() for _ in range(pool_size)]  # 每个浏览器的锁
+
+        # 引用计数 + 条件变量（支持多请求并发，重启时等待所有请求完成）
+        self._ref_counts = [0] * pool_size  # 每个浏览器的活跃请求计数
+        self._restarting = [False] * pool_size  # 每个浏览器是否正在重启
+        self._conditions = [asyncio.Condition() for _ in range(pool_size)]  # 条件变量
 
     async def initialize(self):
         """初始化浏览器池"""
@@ -438,6 +441,16 @@ class BrowserPool:
             browser_index = self._request_count % len(self.browsers)
             browser = self.browsers[browser_index]
 
+            # 获取浏览器引用（使用条件变量保护）
+            cond = self._conditions[browser_index]
+            async with cond:
+                # 如果正在重启，等待完成
+                while self._restarting[browser_index]:
+                    logger.info(f"浏览器 {browser_index} 正在重启，等待完成...")
+                    await cond.wait()
+                # 增加引用计数
+                self._ref_counts[browser_index] += 1
+
             # 打印开始抓取（带监控面板）
             mem_info = get_memory_info()
             print_memory_summary(
@@ -446,9 +459,6 @@ class BrowserPool:
                 browser_pool=self,
                 highlight_browser=browser_index
             )
-
-            # 标记浏览器正在使用（避免被监控任务重启）
-            self._active_requests[browser_index] = True
 
             context = None
             page = None
@@ -573,8 +583,12 @@ class BrowserPool:
                 self._last_used[browser_index] = time.time()
                 self._fetch_counts[browser_index] += 1
 
-                # 取消活跃请求标记（请求已完成）
-                self._active_requests[browser_index] = None
+                # 减少引用计数并通知可能等待的监控任务
+                cond = self._conditions[browser_index]
+                async with cond:
+                    self._ref_counts[browser_index] -= 1
+                    # 通知等待的监控任务（如果有）
+                    cond.notify_all()
 
                 # 请求完成后的内存状态（使用 Rich 美化输出）
                 mem_info = get_memory_info()
@@ -612,33 +626,46 @@ class BrowserPool:
                     idle_time = current_time - self._last_used[i]
                     has_been_used = self._fetch_counts[i] > 0
 
-                    # 检查是否有活跃请求
-                    has_active_request = self._active_requests[i] is not None
-
-                    # 重启条件：有使用过且空闲超过5秒且无活跃请求
-                    should_restart = has_been_used and idle_time > self._idle_timeout and not has_active_request
+                    # 重启条件：有使用过、空闲超过5秒、无活跃请求、未在重启中
+                    should_restart = (
+                        has_been_used
+                        and idle_time > self._idle_timeout
+                        and self._ref_counts[i] == 0
+                        and not self._restarting[i]
+                    )
 
                     if should_restart:
                         self._fetch_counts[i] = 0
-                        async with self._browser_locks[i]:
-                            # 锁内二次检查：确认没有活跃请求（避免竞态条件）
-                            if self._active_requests[i] is not None:
-                                continue
-                            try:
-                                await self.browsers[i].close()
-                                new_browser = await self.playwright.chromium.launch(
-                                    headless=Config.HEADLESS,
-                                    args=Config.BROWSER_ARGS
-                                )
-                                self.browsers[i] = new_browser
+                        cond = self._conditions[i]
 
-                                # 重启后垃圾回收并输出状态
-                                import gc
-                                gc.collect()
-                                mem_info = get_memory_info()
-                                print_memory_summary("✓ 浏览器重启完成", mem_info, browser_pool=self)
-                            except Exception as e:
-                                logger.error(f"重启浏览器 {i} 失败: {e}")
+                        async with cond:
+                            # 二次检查：确认没有活跃请求（避免竞态条件）
+                            if self._ref_counts[i] > 0:
+                                continue
+                            # 标记为正在重启（阻止新请求）
+                            self._restarting[i] = True
+
+                        try:
+                            # 重启浏览器
+                            await self.browsers[i].close()
+                            new_browser = await self.playwright.chromium.launch(
+                                headless=Config.HEADLESS,
+                                args=Config.BROWSER_ARGS
+                            )
+                            self.browsers[i] = new_browser
+
+                            # 重启后垃圾回收并输出状态
+                            import gc
+                            gc.collect()
+                            mem_info = get_memory_info()
+                            print_memory_summary("✓ 浏览器重启完成", mem_info, browser_pool=self)
+                        except Exception as e:
+                            logger.error(f"重启浏览器 {i} 失败: {e}")
+                        finally:
+                            # 清除重启标记并通知等待的请求
+                            async with cond:
+                                self._restarting[i] = False
+                                cond.notify_all()
             except Exception as e:
                 logger.error(f"监控任务异常: {e}")
 
