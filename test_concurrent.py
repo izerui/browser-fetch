@@ -15,11 +15,20 @@ TEST_URLS = [
     "https://www.wikipedia.org",
     "https://www.npmjs.com",
     "https://www.reddit.com",
+    "https://www.mozilla.org",
+    "https://www.nodejs.org",
+    "https://www.linux.org",
+    "https://www.docker.com",
+    "https://www.typescriptlang.org",
+    "https://www.rust-lang.org",
+    "https://go.dev",
+    "https://www.lua.org",
+    "https://www.perl.org",
 ]
 
 # 测试配置
 TEST_DURATION = 60  # 持续1分钟
-CONCURRENT_REQUESTS = 3  # 每轮并发请求数
+CONCURRENT_REQUESTS = 10  # 每轮并发请求数
 
 
 async def fetch_url(task_id: int, url: str, client: httpx.AsyncClient) -> dict:
@@ -35,13 +44,13 @@ async def fetch_url(task_id: int, url: str, client: httpx.AsyncClient) -> dict:
         elapsed = time.time() - start_time
 
         if result.get("success"):
-            print(f"  [OK] {elapsed:.1f}s | {result.get('title', '')[:25]}")
+            print(f"  [OK] {elapsed:.1f}s | {url[:35]} | {result.get('title', '')[:20]}")
         else:
-            print(f"  [FAIL] {result.get('error', '未知错误')[:30]}")
+            print(f"  [FAIL] {url[:30]} | {result.get('error', '未知错误')[:30]}")
         return result
     except Exception as e:
         elapsed = time.time() - start_time
-        print(f"  [ERR] {str(e)[:30]} | {elapsed:.1f}s")
+        print(f"  [ERR] {url[:30]} | {str(e)[:30]}")
         return {"success": False, "error": str(e)}
 
 
@@ -64,7 +73,7 @@ async def main():
             round_start = time.time()
             remaining = int(end_time - time.time())
 
-            print(f"[轮次 {round_num}] 剩余: {remaining}秒", end=" | ")
+            print(f"[轮次 {round_num}] 剩余: {remaining}秒")
 
             # 并发执行请求
             tasks = [
