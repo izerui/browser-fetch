@@ -10,30 +10,24 @@ import os
 import random
 import re
 import time
-import psutil
 from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urljoin
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-from rich.text import Text
-from rich import box
-from rich.live import Live
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from playwright.async_api import async_playwright, Browser, async_playwright
-from playwright_stealth import Stealth
+import psutil
+from fastapi import FastAPI
 from markdownify import markdownify
+from playwright.async_api import Browser, async_playwright
+from playwright_stealth import Stealth
+from pydantic import BaseModel
+from rich.console import Console
 
 # Rich 控制台（用于美化输出）
 rich_console = Console()
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
 
 # ==================== 配置 ====================
 
@@ -217,7 +211,8 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
 
     # 概览信息
     rich_console.print(f"[bold cyan]━━ {title} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold cyan]")
-    rich_console.print(f"  CPU: {cpu_percent:.0f}%  |  总内存: {mem_color}{format_memory_mb(total_mb)}[/]  |  Chromium: {chromium_count}进程 ({format_memory_mb(chromium_mb)})")
+    rich_console.print(
+        f"  CPU: {cpu_percent:.0f}%  |  总内存: {mem_color}{format_memory_mb(total_mb)}[/]  |  Chromium: {chromium_count}进程 ({format_memory_mb(chromium_mb)})")
     rich_console.print(f"  请求: {total_requests}次  |  运行: {uptime_text}", end="")
     if browser_pool:
         rich_console.print(f"  |  浏览器池: [cyan]{active_count}/{browser_pool.pool_size}[/] 活跃")
@@ -276,7 +271,7 @@ def print_memory_summary(title: str, mem_info: dict, browser_pool=None, highligh
             if browser_pids:
                 pid_str = ",".join(map(str, browser_pids[:3]))
                 if len(browser_pids) > 3:
-                    pid_str += f"+{len(browser_pids)-3}"
+                    pid_str += f"+{len(browser_pids) - 3}"
                 pid_part = f"  |  PID: [cyan]{pid_str}[/]"
 
             rich_console.print(
@@ -316,56 +311,27 @@ class BrowserPool:
         if self._initialized:
             return
 
-        # 使用 Rich 输出初始化信息
-        rich_console.print()
-        rich_console.print(Panel(
-            f"[cyan]正在初始化浏览器实例池，大小: {self.pool_size}[/cyan]",
-            border_style="cyan",
-            padding=(0, 2)
-        ))
-
         try:
             self.playwright = await async_playwright().start()
 
-            # 启动多个浏览器实例（使用 Rich 进度条）
-            rich_console.print()
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(bar_width=40),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                console=rich_console,
-                transient=True
-            ) as progress:
-                task = progress.add_task("[cyan]启动浏览器实例...[/]", total=self.pool_size)
-
-                for i in range(self.pool_size):
-                    browser = await self.playwright.chromium.launch(
-                        headless=Config.HEADLESS,
-                        args=Config.BROWSER_ARGS
-                    )
-                    self.browsers.append(browser)
-                    progress.advance(task)
+            # 启动多个浏览器实例
+            for i in range(self.pool_size):
+                browser = await self.playwright.chromium.launch(
+                    headless=Config.HEADLESS,
+                    args=Config.BROWSER_ARGS
+                )
+                self.browsers.append(browser)
 
             self._initialized = True
 
-            # 使用 Rich 美化输出（使用顶部已导入的 Table, Panel, box）
-            init_table = Table(show_header=False, box=box.ROUNDED, padding=(0, 1))
-
-            init_table = Table(show_header=False, box=box.ROUNDED, padding=(0, 1))
-            init_table.add_column("", style="cyan", width=18)
-            init_table.add_column("", justify="right")
-
-            init_table.add_row("浏览器池大小", f"[cyan]{len(self.browsers)} 个[/]")
-            init_table.add_row("最大并发", f"[cyan]{Config.MAX_CONCURRENT_PAGES}[/]")
-            init_table.add_row("理论最大并发", f"[green]{len(self.browsers) * Config.MAX_CONCURRENT_PAGES}[/]")
-
+            # 简单输出初始化完成
             rich_console.print()
-            rich_console.print(Panel(
-                init_table,
-                title="[bold green]✓ 浏览器池初始化完成[/bold green]",
-                border_style="green"
-            ))
+            rich_console.print(
+                f"[bold green]✓ 浏览器池初始化完成[/] "
+                f"[cyan]池大小: {len(self.browsers)} | "
+                f"最大并发: {Config.MAX_CONCURRENT_PAGES} | "
+                f"理论最大并发: [green]{len(self.browsers) * Config.MAX_CONCURRENT_PAGES}[/][/cyan]"
+            )
             rich_console.print()
 
             # 启动常驻监控任务
@@ -378,45 +344,19 @@ class BrowserPool:
 
     async def shutdown(self):
         """关闭所有浏览器实例"""
-        # 使用 Rich 美化输出
-        rich_console.print()
-        rich_console.print(Panel(
-            "[yellow]正在关闭浏览器实例池...[/yellow]",
-            border_style="yellow",
-            padding=(0, 2)
-        ))
-
         # 先停止常驻监控任务
         if self._monitor_stop:
             self._monitor_stop.set()
-            # Rich 输出
-            rich_console.print(Panel(
-                "[dim]⟳ 常驻监控任务已停止[/dim]",
-                border_style="dim",
-                padding=(0, 2)
-            ))
 
         # 等待监控任务完全停止
         await asyncio.sleep(0.5)
 
-        # 关闭所有浏览器实例（使用 Rich 进度条）
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=rich_console,
-            transient=True
-        ) as progress:
-            task = progress.add_task("[cyan]关闭浏览器实例...[/]", total=len(self.browsers))
-
-            for i, browser in enumerate(self.browsers):
-                try:
-                    await browser.close()
-                    progress.advance(task)
-                except Exception as e:
-                    rich_console.print(Panel(
-                        f"[red]关闭浏览器实例 {i} 时出错: {e}[/red]",
-                        border_style="red"
-                    ))
+        # 关闭所有浏览器实例
+        for i, browser in enumerate(self.browsers):
+            try:
+                await browser.close()
+            except Exception as e:
+                rich_console.print(f"[red]关闭浏览器实例 {i} 时出错: {e}[/red]")
 
         self.browsers.clear()
 
@@ -482,6 +422,7 @@ class BrowserPool:
                             await route.abort()
                         else:
                             await route.continue_()
+
                     await page.route("**", block_media_route)
 
                 # 应用反爬虫脚本
@@ -616,7 +557,6 @@ class BrowserPool:
                     highlight_browser=browser_index
                 )
 
-    
     async def _apply_stealth(self, page):
         """应用反爬虫脚本"""
         await self._stealth.apply_stealth_async(page)
@@ -643,10 +583,10 @@ class BrowserPool:
 
                     # 重启条件：有使用过、空闲超过5秒、无活跃请求、未在重启中
                     should_restart = (
-                        has_been_used
-                        and idle_time > self._idle_timeout
-                        and self._ref_counts[i] == 0
-                        and not self._restarting[i]
+                            has_been_used
+                            and idle_time > self._idle_timeout
+                            and self._ref_counts[i] == 0
+                            and not self._restarting[i]
                     )
 
                     if should_restart:
@@ -715,7 +655,7 @@ class BrowserPool:
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 await asyncio.sleep(scroll_wait_ms / 1000)
 
-                logger.debug(f"执行第 {i+1} 次滚动")
+                logger.debug(f"执行第 {i + 1} 次滚动")
 
         except Exception as e:
             logger.warning(f"滚动过程出错: {e}")
@@ -924,7 +864,7 @@ browser_service_max_concurrent {Config.MAX_CONCURRENT_PAGES}
 
 @app.post("/fetch_url")
 async def fetch_url(
-    request: FetchRequest
+        request: FetchRequest
 ):
     """
     抓取网页并返回内容
